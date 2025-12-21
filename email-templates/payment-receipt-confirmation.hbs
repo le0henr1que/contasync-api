@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Comprovante Recebido - ContaSync</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f4f4f4;
+        }
+        .container {
+            background-color: #ffffff;
+            border-radius: 8px;
+            padding: 30px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .header {
+            text-align: center;
+            padding-bottom: 20px;
+            border-bottom: 2px solid #0066cc;
+            margin-bottom: 30px;
+        }
+        .logo {
+            font-size: 28px;
+            font-weight: bold;
+            color: #0066cc;
+        }
+        .success-icon {
+            text-align: center;
+            font-size: 48px;
+            color: #28a745;
+            margin: 20px 0;
+        }
+        .payment-details {
+            background-color: #f8f9fa;
+            border-left: 4px solid #28a745;
+            padding: 15px;
+            margin: 20px 0;
+        }
+        .payment-details h3 {
+            margin-top: 0;
+            color: #28a745;
+        }
+        .detail-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid #e0e0e0;
+        }
+        .detail-row:last-child {
+            border-bottom: none;
+        }
+        .detail-label {
+            font-weight: bold;
+            color: #666;
+        }
+        .detail-value {
+            color: #333;
+        }
+        .info-box {
+            background-color: #e7f3ff;
+            border: 1px solid #0066cc;
+            border-radius: 5px;
+            padding: 15px;
+            margin: 20px 0;
+        }
+        .footer {
+            text-align: center;
+            margin-top: 30px;
+            padding-top: 20px;
+            border-top: 1px solid #e0e0e0;
+            font-size: 12px;
+            color: #666;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="logo">ContaSync</div>
+            <p style="margin: 5px 0; color: #666;">Gestão Contábil Simplificada</p>
+        </div>
+
+        <div class="success-icon">✓</div>
+
+        <div class="content">
+            <h2 style="color: #28a745; text-align: center;">Comprovante Recebido com Sucesso!</h2>
+
+            <p>Olá <strong>{{clientName}}</strong>,</p>
+
+            <p>Confirmamos o recebimento do seu comprovante de pagamento. Seu contador irá analisá-lo em breve.</p>
+
+            <div class="payment-details">
+                <h3>Detalhes do Pagamento:</h3>
+                <div class="detail-row">
+                    <span class="detail-label">Referência:</span>
+                    <span class="detail-value">{{paymentReference}}</span>
+                </div>
+                <div class="detail-row">
+                    <span class="detail-label">Valor:</span>
+                    <span class="detail-value">{{amount}}</span>
+                </div>
+                <div class="detail-row">
+                    <span class="detail-label">Data do Pagamento:</span>
+                    <span class="detail-value">{{date}}</span>
+                </div>
+            </div>
+
+            <div class="info-box">
+                <p style="margin: 0;"><strong>O que acontece agora?</strong></p>
+                <p style="margin: 10px 0 0 0;">
+                    Seu contador irá verificar o comprovante enviado e atualizar o status do pagamento.
+                    Você será notificado caso haja alguma pendência ou quando o pagamento for confirmado.
+                </p>
+            </div>
+
+            <p style="font-size: 14px; color: #666; margin-top: 30px;">
+                Obrigado por usar o ContaSync para gerenciar suas obrigações contábeis!
+            </p>
+        </div>
+
+        <div class="footer">
+            <p>ContaSync - Sistema de Gestão Contábil</p>
+            <p>Este é um e-mail automático, por favor não responda.</p>
+        </div>
+    </div>
+</body>
+</html>

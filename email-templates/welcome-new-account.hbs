@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bem-vindo ao ContaSync</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f4f4f4;
+        }
+        .container {
+            background-color: #ffffff;
+            border-radius: 8px;
+            padding: 30px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .header {
+            text-align: center;
+            padding-bottom: 20px;
+            border-bottom: 2px solid #0066cc;
+            margin-bottom: 30px;
+        }
+        .logo {
+            font-size: 28px;
+            font-weight: bold;
+            color: #0066cc;
+        }
+        .content {
+            margin-bottom: 30px;
+        }
+        .button {
+            display: inline-block;
+            padding: 12px 30px;
+            background-color: #0066cc;
+            color: #ffffff !important;
+            text-decoration: none;
+            border-radius: 5px;
+            margin: 20px 0;
+        }
+        .button:hover {
+            background-color: #0052a3;
+        }
+        .footer {
+            text-align: center;
+            padding-top: 20px;
+            border-top: 1px solid #e0e0e0;
+            margin-top: 30px;
+            font-size: 12px;
+            color: #666;
+        }
+        .info-box {
+            background-color: #f8f9fa;
+            border-left: 4px solid #0066cc;
+            padding: 15px;
+            margin: 20px 0;
+        }
+        .success-box {
+            background-color: #d4edda;
+            border: 1px solid #28a745;
+            border-radius: 5px;
+            padding: 15px;
+            margin: 20px 0;
+            color: #155724;
+        }
+        .features-list {
+            background-color: #f8f9fa;
+            border-radius: 5px;
+            padding: 20px;
+            margin: 20px 0;
+        }
+        .features-list ul {
+            margin: 10px 0;
+            padding-left: 20px;
+        }
+        .features-list li {
+            margin: 8px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="logo">ContaSync</div>
+            <p style="margin: 5px 0; color: #666;">Gestão Contábil Simplificada</p>
+        </div>
+        <div class="content">
+            <h2 style="color: #0066cc;">🎉 Bem-vindo ao ContaSync!</h2>
+
+            <p>Olá <strong>{{name}}</strong>,</p>
+
+            <div class="success-box">
+                <p style="margin: 0; font-size: 16px;">
+                    ✓ Seu pagamento foi confirmado e sua conta está ativa!
+                </p>
+            </div>
+
+            <p>Estamos felizes em tê-lo conosco! Sua assinatura do ContaSync para <strong>{{companyName}}</strong> foi ativada com sucesso.</p>
+
+            <div class="info-box">
+                <p style="margin: 0 0 10px 0;"><strong>Informações da sua conta:</strong></p>
+                <p style="margin: 5px 0;"><strong>Email:</strong> {{email}}</p>
+                <p style="margin: 5px 0;"><strong>Empresa:</strong> {{companyName}}</p>
+                <p style="margin: 5px 0;"><strong>Plano:</strong> {{planName}}</p>
+            </div>
+
+            <div class="features-list">
+                <h3 style="margin-top: 0; color: #0066cc;">O que você pode fazer agora:</h3>
+                <ul>
+                    <li><strong>Adicionar Clientes:</strong> Cadastre seus clientes e envie convites de acesso ao portal</li>
+                    <li><strong>Gerenciar Documentos:</strong> Envie e organize documentos fiscais para cada cliente</li>
+                    <li><strong>Controle de Pagamentos:</strong> Acompanhe pagamentos recebidos e envie lembretes automáticos</li>
+                    <li><strong>Gestão de Despesas:</strong> Organize e categorize despesas de todos os clientes</li>
+                    <li><strong>Solicitação de Documentos:</strong> Solicite documentos aos clientes com prazo e notificações</li>
+                    <li><strong>Portal do Cliente:</strong> Seus clientes terão acesso a um portal personalizado</li>
+                </ul>
+            </div>
+
+            <div style="text-align: center;">
+                <a href="{{loginUrl}}" class="button">Acessar Minha Conta</a>
+            </div>
+
+            <div class="info-box">
+                <p style="margin: 0 0 10px 0;"><strong>Primeiros Passos:</strong></p>
+                <ol style="margin: 5px 0; padding-left: 20px;">
+                    <li>Faça login na sua conta</li>
+                    <li>Complete seu perfil e configurações</li>
+                    <li>Adicione seus primeiros clientes</li>
+                    <li>Explore os recursos e comece a organizar sua contabilidade</li>
+                </ol>
+            </div>
+
+            <p style="margin-top: 30px;">Precisa de ajuda? Nossa equipe de suporte está à disposição para te auxiliar.</p>
+
+            <p>Seja bem-vindo à família ContaSync!</p>
+
+            <p style="margin-top: 20px;">
+                Atenciosamente,<br>
+                <strong>Equipe ContaSync</strong>
+            </p>
+        </div>
+        <div class="footer">
+            <p>ContaSync - Sistema de Gestão Contábil</p>
+            <p>Este é um e-mail automático, por favor não responda.</p>
+            <p style="margin-top: 10px; font-size: 11px;">
+                Se você não criou esta conta, por favor ignore este e-mail.
+            </p>
+        </div>
+    </div>
+</body>
+</html>

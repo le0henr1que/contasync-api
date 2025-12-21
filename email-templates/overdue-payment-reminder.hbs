@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lembrete: Pagamento em Atraso</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f4f4f4;
+        }
+        .container {
+            background-color: #ffffff;
+            border-radius: 8px;
+            padding: 30px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .header {
+            text-align: center;
+            padding-bottom: 20px;
+            border-bottom: 2px solid #0066cc;
+            margin-bottom: 30px;
+        }
+        .logo {
+            font-size: 28px;
+            font-weight: bold;
+            color: #0066cc;
+        }
+        .content {
+            margin-bottom: 30px;
+        }
+        .button {
+            display: inline-block;
+            padding: 12px 30px;
+            background-color: #dc3545;
+            color: #ffffff !important;
+            text-decoration: none;
+            border-radius: 5px;
+            margin: 20px 0;
+        }
+        .button:hover {
+            background-color: #c82333;
+        }
+        .footer {
+            text-align: center;
+            padding-top: 20px;
+            border-top: 1px solid #e0e0e0;
+            margin-top: 30px;
+            font-size: 12px;
+            color: #666;
+        }
+        .warning-box {
+            background-color: #fff3cd;
+            border-left: 4px solid #ffc107;
+            padding: 15px;
+            margin: 20px 0;
+        }
+        .payment-details {
+            background-color: #f8d7da;
+            border: 1px solid #f5c6cb;
+            border-radius: 5px;
+            padding: 15px;
+            margin: 20px 0;
+        }
+        .payment-details table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        .payment-details td {
+            padding: 8px 0;
+        }
+        .payment-details td:first-child {
+            font-weight: bold;
+            width: 40%;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="logo">ContaSync</div>
+            <p style="margin: 5px 0; color: #666;">Gestão Contábil Simplificada</p>
+        </div>
+        <div class="content">
+            <h2 style="color: #dc3545;">⚠️ Lembrete: Pagamento em Atraso</h2>
+
+            <p>Olá <strong>{{clientName}}</strong>,</p>
+
+            <p>Identificamos que você possui um pagamento em atraso.</p>
+
+            <div class="payment-details">
+                <h3 style="margin-top: 0; color: #721c24;">Detalhes do Pagamento:</h3>
+                <table>
+                    <tr>
+                        <td>Referência:</td>
+                        <td>{{paymentReference}}</td>
+                    </tr>
+                    <tr>
+                        <td>Valor:</td>
+                        <td><strong>{{amount}}</strong></td>
+                    </tr>
+                    <tr>
+                        <td>Data de Vencimento:</td>
+                        <td>{{dueDate}}</td>
+                    </tr>
+                    <tr>
+                        <td>Dias em atraso:</td>
+                        <td><strong style="color: #dc3545;">{{daysOverdue}} dia(s)</strong></td>
+                    </tr>
+                </table>
+            </div>
+
+            <p>Para regularizar sua situação, acesse o portal do cliente e envie o comprovante de pagamento.</p>
+
+            <div style="text-align: center;">
+                <a href="{{portalUrl}}" class="button">Acessar Portal do Cliente</a>
+            </div>
+
+            <div class="warning-box">
+                <p style="margin: 0;"><strong>Importante:</strong></p>
+                <p style="margin: 5px 0 0 0;">Caso já tenha realizado o pagamento, por favor ignore este e-mail ou envie o comprovante através do portal.</p>
+            </div>
+
+            <p>Em caso de dúvidas, entre em contato com seu contador.</p>
+        </div>
+        <div class="footer">
+            <p>ContaSync - Sistema de Gestão Contábil</p>
+            <p>Este é um e-mail automático, por favor não responda.</p>
+        </div>
+    </div>
+</body>
+</html>

@@ -1,0 +1,593 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ============================================
+// ENUMS
+// ============================================
+
+enum Role {
+  ADMIN
+  ACCOUNTANT
+  CLIENT
+}
+
+enum SubscriptionStatus {
+  TRIALING // Trial period (14 days)
+  ACTIVE // Active subscription
+  PAST_DUE // Payment failed, grace period
+  CANCELED // Canceled by user
+  EXPIRED // Trial expired without payment
+  INCOMPLETE // Initial payment incomplete
+}
+
+enum DocumentType {
+  NFE
+  NFSE
+  CTE
+  RECEIPT
+  CONTRACT
+  BANK_STATEMENT
+  STATEMENT
+  OTHER
+}
+
+enum PaymentStatus {
+  PENDING
+  AWAITING_INVOICE // Aguardando anexo de NF (para recorrentes)
+  READY_TO_PAY // NF anexada, pronto para pagamento
+  PAID
+  OVERDUE
+  CANCELED
+}
+
+enum RequestStatus {
+  PENDING
+  FULFILLED
+  EXPIRED
+}
+
+enum PaymentMethod {
+  CASH
+  PIX
+  BANK_TRANSFER
+  CREDIT_CARD
+  DEBIT_CARD
+  BOLETO
+}
+
+enum PaymentType {
+  CLIENT
+  OFFICE
+}
+
+enum RecurringFrequency {
+  MONTHLY
+  QUARTERLY
+  SEMIANNUAL
+  YEARLY
+}
+
+enum NotificationType {
+  DOCUMENT_AVAILABLE
+  DOCUMENT_REQUESTED
+  PAYMENT_REGISTERED
+  PAYMENT_OVERDUE
+}
+
+enum ExpenseCategory {
+  FOOD // Alimentação
+  TRANSPORT // Transporte
+  HEALTH // Saúde
+  EDUCATION // Educação
+  OTHER // Outros
+}
+
+enum FolderType {
+  NOTAS_FISCAIS // Notas Fiscais (NFe, NFSe)
+  CONTRATOS // Contratos diversos
+  DECLARACOES // Declarações fiscais
+  COMPROVANTES // Comprovantes de pagamento
+  BALANCETES // Balancetes e demonstrativos
+  OUTROS // Outros documentos
+}
+
+enum BillingInterval {
+  MONTHLY
+  YEARLY
+}
+
+enum TenantType {
+  INDIVIDUAL // Cliente final (pessoa física/jurídica)
+  ACCOUNTANT_FIRM // Escritório de contabilidade
+}
+
+enum InvoiceStatus {
+  DRAFT
+  OPEN
+  PAID
+  VOID
+  UNCOLLECTIBLE
+}
+
+// ============================================
+// USER & AUTH MODELS
+// ============================================
+
+model User {
+  id           String    @id @default(cuid())
+  email        String    @unique
+  passwordHash String
+  name         String
+  role         Role      @default(CLIENT)
+  isActive     Boolean   @default(true)
+  deletedAt    DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  accountant          Accountant?
+  client              Client?
+  refreshTokens       RefreshToken[]
+  passwordResetTokens PasswordResetToken[]
+  activityLogs        ActivityLog[]
+  uploadedDocuments   Document[]
+
+  @@map("users")
+}
+
+model RefreshToken {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  token     String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@map("refresh_tokens")
+}
+
+// ============================================
+// ACCOUNTANT & CLIENT MODELS
+// ============================================
+
+model Accountant {
+  id                   String             @id @default(cuid())
+  userId               String             @unique
+  user                 User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  companyName          String
+  cnpj                 String             @unique
+  crc                  String
+  phone                String?
+  stripeCustomerId     String?            @unique
+  stripeSubscriptionId String?            @unique
+  subscriptionStatus   SubscriptionStatus @default(TRIALING)
+  subscriptionPlan     String?
+  trialEndsAt          DateTime?
+  onboardingCompleted  Boolean            @default(false)
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
+
+  clients      Client[]
+  payments     Payment[]
+  subscription Subscription?
+  invitations  Invitation[]
+
+  @@index([cnpj])
+  @@map("accountants")
+}
+
+model Client {
+  id                   String     @id @default(cuid())
+  userId               String     @unique
+  user                 User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accountantId         String
+  accountant           Accountant @relation(fields: [accountantId], references: [id], onDelete: Cascade)
+  companyName          String?
+  cpfCnpj              String     @unique
+  phone                String?
+  expenseModuleEnabled Boolean    @default(false)
+  deletedAt            DateTime?
+  createdAt            DateTime   @default(now())
+  updatedAt            DateTime   @updatedAt
+
+  documents       Document[]
+  documentFolders DocumentFolder[]
+  payments        Payment[]
+  expenses        Expense[]
+  requests        DocumentRequest[]
+  activityLogs    ActivityLog[]
+  notifications   Notification[]
+
+  @@index([accountantId])
+  @@index([cpfCnpj])
+  @@map("clients")
+}
+
+model DocumentFolder {
+  id       String @id @default(cuid())
+  clientId String
+  client   Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  name        String // Nome customizado da pasta
+  type        FolderType // Tipo da pasta
+  icon        String? // Emoji ou ícone da pasta (opcional)
+  color       String? // Cor da pasta (hex, opcional)
+  description String? // Descrição da pasta
+
+  // Ordenação e organização
+  sortOrder Int     @default(0) // Permite reordenar pastas
+  isDefault Boolean @default(false) // Pastas padrão criadas automaticamente
+
+  documents Document[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([clientId])
+  @@index([type])
+  @@map("document_folders")
+}
+
+// ============================================
+// BUSINESS MODELS
+// ============================================
+
+model Document {
+  id          String           @id @default(cuid())
+  clientId    String
+  client      Client           @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  folderId    String?
+  folder      DocumentFolder?  @relation(fields: [folderId], references: [id], onDelete: SetNull)
+  requestId   String?
+  request     DocumentRequest? @relation(fields: [requestId], references: [id], onDelete: SetNull)
+  type        DocumentType
+  title       String
+  description String?
+  filePath    String
+  fileName    String
+  mimeType    String
+  fileSize    Int
+  createdById String
+  createdBy   User             @relation(fields: [createdById], references: [id], onDelete: Cascade)
+  deletedAt   DateTime?
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  // N:N relationship with payments
+  paymentAttachments PaymentDocument[]
+
+  @@index([clientId])
+  @@index([folderId])
+  @@index([requestId])
+  @@index([type])
+  @@index([createdAt])
+  @@index([createdById])
+  @@map("documents")
+}
+
+model Payment {
+  id            String         @id @default(cuid())
+  clientId      String?
+  client        Client?        @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  accountantId  String
+  accountant    Accountant     @relation(fields: [accountantId], references: [id], onDelete: Cascade)
+  paymentType   PaymentType    @default(CLIENT)
+  title         String
+  amount        Decimal        @db.Decimal(10, 2)
+  paymentDate   DateTime?
+  dueDate       DateTime
+  paymentMethod PaymentMethod?
+  reference     String?
+  notes         String?
+  status        PaymentStatus  @default(PENDING)
+  receiptPath   String?
+  fileName      String?
+  mimeType      String?
+  fileSize      Int?
+
+  // Recurring payment fields
+  isRecurring         Boolean             @default(false)
+  recurringFrequency  RecurringFrequency?
+  recurringDayOfMonth Int?
+  recurringEndDate    DateTime?
+  parentPaymentId     String?
+  parentPayment       Payment?            @relation("RecurringPayments", fields: [parentPaymentId], references: [id], onDelete: SetNull)
+  childPayments       Payment[]           @relation("RecurringPayments")
+
+  // Invoice attachment control fields
+  requiresInvoice   Boolean   @default(false)
+  invoiceAttachedAt DateTime?
+  invoiceAttachedBy String?
+
+  // N:N relationship with documents
+  attachedDocuments PaymentDocument[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([clientId])
+  @@index([accountantId])
+  @@index([paymentType])
+  @@index([status])
+  @@index([dueDate])
+  @@index([paymentDate])
+  @@index([isRecurring])
+  @@index([parentPaymentId])
+  @@map("payments")
+}
+
+model PaymentDocument {
+  id         String   @id @default(cuid())
+  paymentId  String
+  payment    Payment  @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  documentId String
+  document   Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  // Metadata
+  attachedAt DateTime @default(now())
+  attachedBy String // User ID que fez o vínculo
+
+  @@unique([paymentId, documentId]) // Previne duplicatas
+  @@index([paymentId])
+  @@index([documentId])
+  @@map("payment_documents")
+}
+
+model Expense {
+  id          String          @id @default(cuid())
+  clientId    String
+  client      Client          @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  category    ExpenseCategory
+  description String
+  amount      Decimal         @db.Decimal(10, 2)
+  date        DateTime
+  receiptPath String?
+  fileName    String?
+  mimeType    String?
+  fileSize    Int?
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  @@index([clientId])
+  @@index([date])
+  @@index([category])
+  @@map("expenses")
+}
+
+model DocumentRequest {
+  id          String        @id @default(cuid())
+  clientId    String
+  client      Client        @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  type        String
+  description String
+  status      RequestStatus @default(PENDING)
+  dueDate     DateTime?
+  fulfilledAt DateTime?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  documents Document[]
+
+  @@index([clientId])
+  @@index([status])
+  @@map("document_requests")
+}
+
+model PasswordResetToken {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  token     String   @unique
+  expiresAt DateTime
+  used      Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([token])
+  @@map("password_reset_tokens")
+}
+
+model ActivityLog {
+  id          String   @id @default(cuid())
+  clientId    String
+  client      Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  action      String
+  description String
+  metadata    Json?
+  createdAt   DateTime @default(now())
+
+  @@index([clientId])
+  @@index([userId])
+  @@index([createdAt])
+  @@map("activity_logs")
+}
+
+model Notification {
+  id        String           @id @default(cuid())
+  clientId  String
+  client    Client           @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  type      NotificationType
+  title     String
+  message   String
+  isRead    Boolean          @default(false)
+  metadata  Json?
+  createdAt DateTime         @default(now())
+  readAt    DateTime?
+
+  @@index([clientId])
+  @@index([isRead])
+  @@index([createdAt])
+  @@map("notifications")
+}
+
+// ============================================
+// SAAS & BILLING MODELS
+// ============================================
+
+model Plan {
+  id          String     @id @default(cuid())
+  name        String // "Starter", "Professional", "Enterprise"
+  slug        String     @unique // "individual-starter", "firm-professional"
+  description String?
+  tenantType  TenantType // INDIVIDUAL or ACCOUNTANT_FIRM
+
+  // Pricing
+  priceMonthly Decimal @db.Decimal(10, 2)
+  priceYearly  Decimal @db.Decimal(10, 2)
+
+  // Stripe IDs
+  stripePriceIdMonthly String? @unique
+  stripePriceIdYearly  String? @unique
+  stripeProductId      String? @unique
+
+  // Limits (stored as JSON)
+  limitsJson Json // { maxPayments: 50, maxExpenses: 100, maxDocuments: 20, storageGB: 2 }
+
+  // Features (stored as JSON)
+  featuresJson Json // { apiAccess: true, prioritySupport: false, multiUser: true }
+
+  // Metadata
+  isActive  Boolean  @default(true)
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  subscriptions Subscription[]
+
+  @@index([slug])
+  @@index([tenantType])
+  @@index([isActive])
+  @@map("plans")
+}
+
+model Subscription {
+  id           String     @id @default(cuid())
+  accountantId String     @unique
+  accountant   Accountant @relation(fields: [accountantId], references: [id], onDelete: Cascade)
+  planId       String
+  plan         Plan       @relation(fields: [planId], references: [id], onDelete: Restrict)
+
+  status   SubscriptionStatus @default(TRIALING)
+  interval BillingInterval    @default(MONTHLY)
+
+  // Stripe integration
+  stripeSubscriptionId String? @unique
+  stripeCustomerId     String? // Duplicated from Accountant for convenience
+
+  // Billing periods
+  currentPeriodStart DateTime
+  currentPeriodEnd   DateTime
+  trialEnd           DateTime?
+  canceledAt         DateTime?
+  cancelAtPeriodEnd  Boolean   @default(false)
+
+  // Metadata
+  metadata  Json? // Extra data (promo codes, etc)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  invoices     Invoice[]
+  usageRecords UsageRecord[]
+
+  @@index([accountantId])
+  @@index([planId])
+  @@index([status])
+  @@index([stripeSubscriptionId])
+  @@map("subscriptions")
+}
+
+model Invoice {
+  id             String       @id @default(cuid())
+  subscriptionId String
+  subscription   Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+
+  // Stripe integration
+  stripeInvoiceId       String? @unique
+  stripePaymentIntentId String? @unique
+
+  // Invoice details
+  invoiceNumber String        @unique
+  status        InvoiceStatus @default(OPEN)
+  amount        Decimal       @db.Decimal(10, 2)
+  currency      String        @default("BRL")
+
+  // Dates
+  periodStart DateTime
+  periodEnd   DateTime
+  dueDate     DateTime?
+  paidAt      DateTime?
+  voidedAt    DateTime?
+
+  // Files
+  invoicePdfUrl    String?
+  hostedInvoiceUrl String?
+
+  // Metadata
+  metadata  Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([subscriptionId])
+  @@index([status])
+  @@index([stripeInvoiceId])
+  @@index([createdAt])
+  @@map("invoices")
+}
+
+model UsageRecord {
+  id             String       @id @default(cuid())
+  subscriptionId String
+  subscription   Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+
+  // Usage metrics
+  paymentsCount  Int @default(0)
+  expensesCount  Int @default(0)
+  documentsCount Int @default(0)
+  storageUsedMB  Int @default(0)
+
+  // Period
+  periodStart DateTime
+  periodEnd   DateTime
+
+  // Metadata
+  metadata  Json?
+  createdAt DateTime @default(now())
+
+  @@index([subscriptionId])
+  @@index([periodStart])
+  @@map("usage_records")
+}
+
+model Invitation {
+  id           String     @id @default(cuid())
+  accountantId String
+  accountant   Accountant @relation(fields: [accountantId], references: [id], onDelete: Cascade)
+
+  // Invitee details
+  email   String
+  name    String?
+  cpfCnpj String?
+
+  // Token
+  token     String   @unique
+  expiresAt DateTime
+
+  // Status
+  acceptedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([accountantId])
+  @@index([token])
+  @@index([email])
+  @@map("invitations")
+}
