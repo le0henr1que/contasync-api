@@ -9,11 +9,12 @@ async function bootstrap() {
     rawBody: true, // Enable raw body for webhooks
   });
 
-  // Enable CORS
-  app.enableCors({
-    origin: ['http://localhost:3000', 'http://localhost:3001', 'http://localhost:3002'],
-    credentials: true,
-  });
+  // Enable CORS - allow all origins in production for Railway health checks
+  const allowedOrigins = process.env.CORS_ORIGINS
+    ? process.env.CORS_ORIGINS.split(',')
+    : ['http://localhost:3000', 'http://localhost:3001', 'http://localhost:3002'];
+
+  app.enableCors();
 
   // Enable validation
   app.useGlobalPipes(
@@ -24,8 +25,10 @@ async function bootstrap() {
     }),
   );
 
-  // Global prefix
-  app.setGlobalPrefix('api');
+  // Global prefix - exclude health check from prefix for Railway
+  app.setGlobalPrefix('api', {
+    exclude: ['health'],
+  });
 
   // Swagger configuration
   const config = new DocumentBuilder()
@@ -44,8 +47,14 @@ async function bootstrap() {
   const document = SwaggerModule.createDocument(app, config);
   SwaggerModule.setup('api/docs', app, document);
 
-  await app.listen(process.env.PORT ?? 3000);
-  console.log(`🚀 API rodando em: http://localhost:${process.env.PORT ?? 3000}/api`);
-  console.log(`📚 Swagger disponível em: http://localhost:${process.env.PORT ?? 3000}/api/docs`);
+  const port = process.env.PORT ?? 3000;
+  await app.listen(port, '0.0.0.0');
+  console.log(`🚀 API rodando em: http://0.0.0.0:${port}/api`);
+  console.log(`📚 Swagger disponível em: http://0.0.0.0:${port}/api/docs`);
+  console.log(`❤️ Health check disponível em: http://0.0.0.0:${port}/health`);
 }
-bootstrap();
+
+bootstrap().catch((error) => {
+  console.error('❌ Erro ao iniciar a aplicação:', error);
+  process.exit(1);
+});

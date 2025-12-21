@@ -23,6 +23,7 @@ import { TrialModule } from './trial/trial.module';
 import { CheckoutModule } from './checkout/checkout.module';
 import { LimitsModule } from './limits/limits.module';
 import { DocumentFoldersModule } from './document-folders/document-folders.module';
+import { HealthModule } from './health/health.module';
 
 @Module({
   imports: [
@@ -49,14 +50,18 @@ import { DocumentFoldersModule } from './document-folders/document-folders.modul
     CheckoutModule,
     LimitsModule,
     DocumentFoldersModule,
+    HealthModule,
   ],
   controllers: [AppController],
   providers: [AppService],
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer) {
-    // Apply TenantMiddleware to all routes
+    // Apply TenantMiddleware to all routes except health check
     // It will extract tenantId from JWT and set it in AsyncLocalStorage
-    consumer.apply(TenantMiddleware).forRoutes('*');
+    consumer
+      .apply(TenantMiddleware)
+      .exclude('health')
+      .forRoutes('*');
   }
 }
