@@ -14,13 +14,13 @@ export declare class PaymentsService {
     findAll(queryDto: QueryPaymentsDto, accountantId: string): Promise<{
         payments: ({
             client: {
-                id: string;
-                companyName: string;
                 user: {
+                    name: string;
                     id: string;
                     email: string;
-                    name: string;
                 };
+                id: string;
+                companyName: string;
             };
             attachedDocuments: ({
                 document: {
@@ -38,23 +38,24 @@ export declare class PaymentsService {
                 attachedBy: string;
             })[];
         } & {
-            createdAt: Date;
             id: string;
-            clientId: string | null;
+            createdAt: Date;
+            updatedAt: Date;
             accountantId: string;
-            paymentType: import("@prisma/client").$Enums.PaymentType;
-            title: string;
-            amount: Prisma.Decimal;
-            paymentDate: Date | null;
-            dueDate: Date;
-            paymentMethod: import("@prisma/client").$Enums.PaymentMethod | null;
-            reference: string | null;
-            notes: string | null;
             status: import("@prisma/client").$Enums.PaymentStatus;
-            receiptPath: string | null;
+            clientId: string | null;
+            title: string;
             fileName: string | null;
             mimeType: string | null;
             fileSize: number | null;
+            dueDate: Date;
+            notes: string | null;
+            paymentType: import("@prisma/client").$Enums.PaymentType;
+            amount: Prisma.Decimal;
+            paymentDate: Date | null;
+            paymentMethod: import("@prisma/client").$Enums.PaymentMethod | null;
+            reference: string | null;
+            receiptPath: string | null;
             isRecurring: boolean;
             recurringFrequency: import("@prisma/client").$Enums.RecurringFrequency | null;
             recurringDayOfMonth: number | null;
@@ -63,7 +64,6 @@ export declare class PaymentsService {
             requiresInvoice: boolean;
             invoiceAttachedAt: Date | null;
             invoiceAttachedBy: string | null;
-            updatedAt: Date;
         })[];
         pagination: {
             total: number;
@@ -74,43 +74,43 @@ export declare class PaymentsService {
         totalSum: number | Prisma.Decimal;
     }>;
     findOne(id: string, accountantId: string): Promise<{
-        client: {
+        accountant: {
             id: string;
             companyName: string;
+        };
+        client: {
             user: {
+                name: string;
                 id: string;
                 email: string;
-                name: string;
             };
-        };
-        accountant: {
             id: string;
             companyName: string;
         };
         attachedDocuments: ({
             document: {
                 folder: {
-                    id: string;
                     name: string;
+                    id: string;
                     type: import("@prisma/client").$Enums.FolderType;
                     icon: string;
                     color: string;
                 };
             } & {
-                createdAt: Date;
                 id: string;
-                clientId: string;
-                title: string;
-                fileName: string;
-                mimeType: string;
-                fileSize: number;
+                description: string | null;
+                createdAt: Date;
                 updatedAt: Date;
                 deletedAt: Date | null;
+                clientId: string;
                 folderId: string | null;
                 requestId: string | null;
                 type: import("@prisma/client").$Enums.DocumentType;
-                description: string | null;
+                title: string;
                 filePath: string;
+                fileName: string;
+                mimeType: string;
+                fileSize: number;
                 createdById: string;
             };
         } & {
@@ -121,23 +121,24 @@ export declare class PaymentsService {
             attachedBy: string;
         })[];
     } & {
-        createdAt: Date;
         id: string;
-        clientId: string | null;
+        createdAt: Date;
+        updatedAt: Date;
         accountantId: string;
-        paymentType: import("@prisma/client").$Enums.PaymentType;
-        title: string;
-        amount: Prisma.Decimal;
-        paymentDate: Date | null;
-        dueDate: Date;
-        paymentMethod: import("@prisma/client").$Enums.PaymentMethod | null;
-        reference: string | null;
-        notes: string | null;
         status: import("@prisma/client").$Enums.PaymentStatus;
-        receiptPath: string | null;
+        clientId: string | null;
+        title: string;
         fileName: string | null;
         mimeType: string | null;
         fileSize: number | null;
+        dueDate: Date;
+        notes: string | null;
+        paymentType: import("@prisma/client").$Enums.PaymentType;
+        amount: Prisma.Decimal;
+        paymentDate: Date | null;
+        paymentMethod: import("@prisma/client").$Enums.PaymentMethod | null;
+        reference: string | null;
+        receiptPath: string | null;
         isRecurring: boolean;
         recurringFrequency: import("@prisma/client").$Enums.RecurringFrequency | null;
         recurringDayOfMonth: number | null;
@@ -146,40 +147,40 @@ export declare class PaymentsService {
         requiresInvoice: boolean;
         invoiceAttachedAt: Date | null;
         invoiceAttachedBy: string | null;
-        updatedAt: Date;
     }>;
     create(createPaymentDto: CreatePaymentDto, accountantId: string): Promise<{
-        client: {
-            id: string;
-            companyName: string;
-            user: {
-                id: string;
-                email: string;
-                name: string;
-            };
-        };
         accountant: {
             id: string;
             companyName: string;
         };
+        client: {
+            user: {
+                name: string;
+                id: string;
+                email: string;
+            };
+            id: string;
+            companyName: string;
+        };
     } & {
-        createdAt: Date;
         id: string;
-        clientId: string | null;
+        createdAt: Date;
+        updatedAt: Date;
         accountantId: string;
-        paymentType: import("@prisma/client").$Enums.PaymentType;
-        title: string;
-        amount: Prisma.Decimal;
-        paymentDate: Date | null;
-        dueDate: Date;
-        paymentMethod: import("@prisma/client").$Enums.PaymentMethod | null;
-        reference: string | null;
-        notes: string | null;
         status: import("@prisma/client").$Enums.PaymentStatus;
-        receiptPath: string | null;
+        clientId: string | null;
+        title: string;
         fileName: string | null;
         mimeType: string | null;
         fileSize: number | null;
+        dueDate: Date;
+        notes: string | null;
+        paymentType: import("@prisma/client").$Enums.PaymentType;
+        amount: Prisma.Decimal;
+        paymentDate: Date | null;
+        paymentMethod: import("@prisma/client").$Enums.PaymentMethod | null;
+        reference: string | null;
+        receiptPath: string | null;
         isRecurring: boolean;
         recurringFrequency: import("@prisma/client").$Enums.RecurringFrequency | null;
         recurringDayOfMonth: number | null;
@@ -188,36 +189,36 @@ export declare class PaymentsService {
         requiresInvoice: boolean;
         invoiceAttachedAt: Date | null;
         invoiceAttachedBy: string | null;
-        updatedAt: Date;
     }>;
     update(id: string, updatePaymentDto: UpdatePaymentDto, accountantId: string): Promise<{
         client: {
-            id: string;
-            companyName: string;
             user: {
+                name: string;
                 id: string;
                 email: string;
-                name: string;
             };
+            id: string;
+            companyName: string;
         };
     } & {
-        createdAt: Date;
         id: string;
-        clientId: string | null;
+        createdAt: Date;
+        updatedAt: Date;
         accountantId: string;
-        paymentType: import("@prisma/client").$Enums.PaymentType;
-        title: string;
-        amount: Prisma.Decimal;
-        paymentDate: Date | null;
-        dueDate: Date;
-        paymentMethod: import("@prisma/client").$Enums.PaymentMethod | null;
-        reference: string | null;
-        notes: string | null;
         status: import("@prisma/client").$Enums.PaymentStatus;
-        receiptPath: string | null;
+        clientId: string | null;
+        title: string;
         fileName: string | null;
         mimeType: string | null;
         fileSize: number | null;
+        dueDate: Date;
+        notes: string | null;
+        paymentType: import("@prisma/client").$Enums.PaymentType;
+        amount: Prisma.Decimal;
+        paymentDate: Date | null;
+        paymentMethod: import("@prisma/client").$Enums.PaymentMethod | null;
+        reference: string | null;
+        receiptPath: string | null;
         isRecurring: boolean;
         recurringFrequency: import("@prisma/client").$Enums.RecurringFrequency | null;
         recurringDayOfMonth: number | null;
@@ -226,36 +227,36 @@ export declare class PaymentsService {
         requiresInvoice: boolean;
         invoiceAttachedAt: Date | null;
         invoiceAttachedBy: string | null;
-        updatedAt: Date;
     }>;
     uploadReceipt(id: string, file: Express.Multer.File, accountantId: string): Promise<{
         client: {
-            id: string;
-            companyName: string;
             user: {
+                name: string;
                 id: string;
                 email: string;
-                name: string;
             };
+            id: string;
+            companyName: string;
         };
     } & {
-        createdAt: Date;
         id: string;
-        clientId: string | null;
+        createdAt: Date;
+        updatedAt: Date;
         accountantId: string;
-        paymentType: import("@prisma/client").$Enums.PaymentType;
-        title: string;
-        amount: Prisma.Decimal;
-        paymentDate: Date | null;
-        dueDate: Date;
-        paymentMethod: import("@prisma/client").$Enums.PaymentMethod | null;
-        reference: string | null;
-        notes: string | null;
         status: import("@prisma/client").$Enums.PaymentStatus;
-        receiptPath: string | null;
+        clientId: string | null;
+        title: string;
         fileName: string | null;
         mimeType: string | null;
         fileSize: number | null;
+        dueDate: Date;
+        notes: string | null;
+        paymentType: import("@prisma/client").$Enums.PaymentType;
+        amount: Prisma.Decimal;
+        paymentDate: Date | null;
+        paymentMethod: import("@prisma/client").$Enums.PaymentMethod | null;
+        reference: string | null;
+        receiptPath: string | null;
         isRecurring: boolean;
         recurringFrequency: import("@prisma/client").$Enums.RecurringFrequency | null;
         recurringDayOfMonth: number | null;
@@ -264,7 +265,6 @@ export declare class PaymentsService {
         requiresInvoice: boolean;
         invoiceAttachedAt: Date | null;
         invoiceAttachedBy: string | null;
-        updatedAt: Date;
     }>;
     private calculatePaymentStatus;
     getStatistics(accountantId: string): Promise<{
@@ -285,27 +285,27 @@ export declare class PaymentsService {
     updatePaymentStatuses(): Promise<void>;
     processRecurringPayments(): Promise<void>;
     getClientByUserId(userId: string): Promise<{
-        createdAt: Date;
         id: string;
-        accountantId: string;
+        createdAt: Date;
         updatedAt: Date;
+        accountantId: string;
         userId: string;
         companyName: string | null;
-        cpfCnpj: string;
         phone: string | null;
-        expenseModuleEnabled: boolean;
         deletedAt: Date | null;
+        cpfCnpj: string;
+        expenseModuleEnabled: boolean;
     }>;
     findAllForClient(queryDto: QueryPaymentsDto, clientId: string): Promise<{
         payments: ({
             client: {
-                id: string;
-                companyName: string;
                 user: {
+                    name: string;
                     id: string;
                     email: string;
-                    name: string;
                 };
+                id: string;
+                companyName: string;
             };
             attachedDocuments: ({
                 document: {
@@ -323,23 +323,24 @@ export declare class PaymentsService {
                 attachedBy: string;
             })[];
         } & {
-            createdAt: Date;
             id: string;
-            clientId: string | null;
+            createdAt: Date;
+            updatedAt: Date;
             accountantId: string;
-            paymentType: import("@prisma/client").$Enums.PaymentType;
-            title: string;
-            amount: Prisma.Decimal;
-            paymentDate: Date | null;
-            dueDate: Date;
-            paymentMethod: import("@prisma/client").$Enums.PaymentMethod | null;
-            reference: string | null;
-            notes: string | null;
             status: import("@prisma/client").$Enums.PaymentStatus;
-            receiptPath: string | null;
+            clientId: string | null;
+            title: string;
             fileName: string | null;
             mimeType: string | null;
             fileSize: number | null;
+            dueDate: Date;
+            notes: string | null;
+            paymentType: import("@prisma/client").$Enums.PaymentType;
+            amount: Prisma.Decimal;
+            paymentDate: Date | null;
+            paymentMethod: import("@prisma/client").$Enums.PaymentMethod | null;
+            reference: string | null;
+            receiptPath: string | null;
             isRecurring: boolean;
             recurringFrequency: import("@prisma/client").$Enums.RecurringFrequency | null;
             recurringDayOfMonth: number | null;
@@ -348,7 +349,6 @@ export declare class PaymentsService {
             requiresInvoice: boolean;
             invoiceAttachedAt: Date | null;
             invoiceAttachedBy: string | null;
-            updatedAt: Date;
         })[];
         pagination: {
             total: number;
@@ -360,38 +360,38 @@ export declare class PaymentsService {
     }>;
     findOneForClient(id: string, clientId: string): Promise<{
         client: {
-            id: string;
-            companyName: string;
             user: {
+                name: string;
                 id: string;
                 email: string;
-                name: string;
             };
+            id: string;
+            companyName: string;
         };
         attachedDocuments: ({
             document: {
                 folder: {
-                    id: string;
                     name: string;
+                    id: string;
                     type: import("@prisma/client").$Enums.FolderType;
                     icon: string;
                     color: string;
                 };
             } & {
-                createdAt: Date;
                 id: string;
-                clientId: string;
-                title: string;
-                fileName: string;
-                mimeType: string;
-                fileSize: number;
+                description: string | null;
+                createdAt: Date;
                 updatedAt: Date;
                 deletedAt: Date | null;
+                clientId: string;
                 folderId: string | null;
                 requestId: string | null;
                 type: import("@prisma/client").$Enums.DocumentType;
-                description: string | null;
+                title: string;
                 filePath: string;
+                fileName: string;
+                mimeType: string;
+                fileSize: number;
                 createdById: string;
             };
         } & {
@@ -402,23 +402,24 @@ export declare class PaymentsService {
             attachedBy: string;
         })[];
     } & {
-        createdAt: Date;
         id: string;
-        clientId: string | null;
+        createdAt: Date;
+        updatedAt: Date;
         accountantId: string;
-        paymentType: import("@prisma/client").$Enums.PaymentType;
-        title: string;
-        amount: Prisma.Decimal;
-        paymentDate: Date | null;
-        dueDate: Date;
-        paymentMethod: import("@prisma/client").$Enums.PaymentMethod | null;
-        reference: string | null;
-        notes: string | null;
         status: import("@prisma/client").$Enums.PaymentStatus;
-        receiptPath: string | null;
+        clientId: string | null;
+        title: string;
         fileName: string | null;
         mimeType: string | null;
         fileSize: number | null;
+        dueDate: Date;
+        notes: string | null;
+        paymentType: import("@prisma/client").$Enums.PaymentType;
+        amount: Prisma.Decimal;
+        paymentDate: Date | null;
+        paymentMethod: import("@prisma/client").$Enums.PaymentMethod | null;
+        reference: string | null;
+        receiptPath: string | null;
         isRecurring: boolean;
         recurringFrequency: import("@prisma/client").$Enums.RecurringFrequency | null;
         recurringDayOfMonth: number | null;
@@ -427,44 +428,44 @@ export declare class PaymentsService {
         requiresInvoice: boolean;
         invoiceAttachedAt: Date | null;
         invoiceAttachedBy: string | null;
-        updatedAt: Date;
     }>;
     uploadReceiptForClient(id: string, file: Express.Multer.File, clientId: string): Promise<{
         client: {
             user: {
-                email: string;
                 name: string;
+                email: string;
             };
         } & {
-            createdAt: Date;
             id: string;
-            accountantId: string;
+            createdAt: Date;
             updatedAt: Date;
+            accountantId: string;
             userId: string;
             companyName: string | null;
-            cpfCnpj: string;
             phone: string | null;
-            expenseModuleEnabled: boolean;
             deletedAt: Date | null;
+            cpfCnpj: string;
+            expenseModuleEnabled: boolean;
         };
     } & {
-        createdAt: Date;
         id: string;
-        clientId: string | null;
+        createdAt: Date;
+        updatedAt: Date;
         accountantId: string;
-        paymentType: import("@prisma/client").$Enums.PaymentType;
-        title: string;
-        amount: Prisma.Decimal;
-        paymentDate: Date | null;
-        dueDate: Date;
-        paymentMethod: import("@prisma/client").$Enums.PaymentMethod | null;
-        reference: string | null;
-        notes: string | null;
         status: import("@prisma/client").$Enums.PaymentStatus;
-        receiptPath: string | null;
+        clientId: string | null;
+        title: string;
         fileName: string | null;
         mimeType: string | null;
         fileSize: number | null;
+        dueDate: Date;
+        notes: string | null;
+        paymentType: import("@prisma/client").$Enums.PaymentType;
+        amount: Prisma.Decimal;
+        paymentDate: Date | null;
+        paymentMethod: import("@prisma/client").$Enums.PaymentMethod | null;
+        reference: string | null;
+        receiptPath: string | null;
         isRecurring: boolean;
         recurringFrequency: import("@prisma/client").$Enums.RecurringFrequency | null;
         recurringDayOfMonth: number | null;
@@ -473,39 +474,39 @@ export declare class PaymentsService {
         requiresInvoice: boolean;
         invoiceAttachedAt: Date | null;
         invoiceAttachedBy: string | null;
-        updatedAt: Date;
     }>;
     delete(id: string, accountantId: string): Promise<{
         message: string;
     }>;
     findRecurringPayments(accountantId: string): Promise<({
         client: {
-            id: string;
-            companyName: string;
             user: {
+                name: string;
                 id: string;
                 email: string;
-                name: string;
             };
+            id: string;
+            companyName: string;
         };
         childPayments: {
-            createdAt: Date;
             id: string;
-            clientId: string | null;
+            createdAt: Date;
+            updatedAt: Date;
             accountantId: string;
-            paymentType: import("@prisma/client").$Enums.PaymentType;
-            title: string;
-            amount: Prisma.Decimal;
-            paymentDate: Date | null;
-            dueDate: Date;
-            paymentMethod: import("@prisma/client").$Enums.PaymentMethod | null;
-            reference: string | null;
-            notes: string | null;
             status: import("@prisma/client").$Enums.PaymentStatus;
-            receiptPath: string | null;
+            clientId: string | null;
+            title: string;
             fileName: string | null;
             mimeType: string | null;
             fileSize: number | null;
+            dueDate: Date;
+            notes: string | null;
+            paymentType: import("@prisma/client").$Enums.PaymentType;
+            amount: Prisma.Decimal;
+            paymentDate: Date | null;
+            paymentMethod: import("@prisma/client").$Enums.PaymentMethod | null;
+            reference: string | null;
+            receiptPath: string | null;
             isRecurring: boolean;
             recurringFrequency: import("@prisma/client").$Enums.RecurringFrequency | null;
             recurringDayOfMonth: number | null;
@@ -514,26 +515,26 @@ export declare class PaymentsService {
             requiresInvoice: boolean;
             invoiceAttachedAt: Date | null;
             invoiceAttachedBy: string | null;
-            updatedAt: Date;
         }[];
     } & {
-        createdAt: Date;
         id: string;
-        clientId: string | null;
+        createdAt: Date;
+        updatedAt: Date;
         accountantId: string;
-        paymentType: import("@prisma/client").$Enums.PaymentType;
-        title: string;
-        amount: Prisma.Decimal;
-        paymentDate: Date | null;
-        dueDate: Date;
-        paymentMethod: import("@prisma/client").$Enums.PaymentMethod | null;
-        reference: string | null;
-        notes: string | null;
         status: import("@prisma/client").$Enums.PaymentStatus;
-        receiptPath: string | null;
+        clientId: string | null;
+        title: string;
         fileName: string | null;
         mimeType: string | null;
         fileSize: number | null;
+        dueDate: Date;
+        notes: string | null;
+        paymentType: import("@prisma/client").$Enums.PaymentType;
+        amount: Prisma.Decimal;
+        paymentDate: Date | null;
+        paymentMethod: import("@prisma/client").$Enums.PaymentMethod | null;
+        reference: string | null;
+        receiptPath: string | null;
         isRecurring: boolean;
         recurringFrequency: import("@prisma/client").$Enums.RecurringFrequency | null;
         recurringDayOfMonth: number | null;
@@ -542,26 +543,26 @@ export declare class PaymentsService {
         requiresInvoice: boolean;
         invoiceAttachedAt: Date | null;
         invoiceAttachedBy: string | null;
-        updatedAt: Date;
     })[]>;
     cancelRecurrence(paymentId: string, accountantId: string): Promise<{
-        createdAt: Date;
         id: string;
-        clientId: string | null;
+        createdAt: Date;
+        updatedAt: Date;
         accountantId: string;
-        paymentType: import("@prisma/client").$Enums.PaymentType;
-        title: string;
-        amount: Prisma.Decimal;
-        paymentDate: Date | null;
-        dueDate: Date;
-        paymentMethod: import("@prisma/client").$Enums.PaymentMethod | null;
-        reference: string | null;
-        notes: string | null;
         status: import("@prisma/client").$Enums.PaymentStatus;
-        receiptPath: string | null;
+        clientId: string | null;
+        title: string;
         fileName: string | null;
         mimeType: string | null;
         fileSize: number | null;
+        dueDate: Date;
+        notes: string | null;
+        paymentType: import("@prisma/client").$Enums.PaymentType;
+        amount: Prisma.Decimal;
+        paymentDate: Date | null;
+        paymentMethod: import("@prisma/client").$Enums.PaymentMethod | null;
+        reference: string | null;
+        receiptPath: string | null;
         isRecurring: boolean;
         recurringFrequency: import("@prisma/client").$Enums.RecurringFrequency | null;
         recurringDayOfMonth: number | null;
@@ -570,46 +571,45 @@ export declare class PaymentsService {
         requiresInvoice: boolean;
         invoiceAttachedAt: Date | null;
         invoiceAttachedBy: string | null;
-        updatedAt: Date;
     }>;
     attachDocument(paymentId: string, documentId: string, userId: string, accountantId: string): Promise<{
-        client: {
+        accountant: {
             id: string;
             companyName: string;
+        };
+        client: {
             user: {
+                name: string;
                 id: string;
                 email: string;
-                name: string;
             };
-        };
-        accountant: {
             id: string;
             companyName: string;
         };
         attachedDocuments: ({
             document: {
                 folder: {
-                    id: string;
                     name: string;
+                    id: string;
                     type: import("@prisma/client").$Enums.FolderType;
                     icon: string;
                     color: string;
                 };
             } & {
-                createdAt: Date;
                 id: string;
-                clientId: string;
-                title: string;
-                fileName: string;
-                mimeType: string;
-                fileSize: number;
+                description: string | null;
+                createdAt: Date;
                 updatedAt: Date;
                 deletedAt: Date | null;
+                clientId: string;
                 folderId: string | null;
                 requestId: string | null;
                 type: import("@prisma/client").$Enums.DocumentType;
-                description: string | null;
+                title: string;
                 filePath: string;
+                fileName: string;
+                mimeType: string;
+                fileSize: number;
                 createdById: string;
             };
         } & {
@@ -620,23 +620,24 @@ export declare class PaymentsService {
             attachedBy: string;
         })[];
     } & {
-        createdAt: Date;
         id: string;
-        clientId: string | null;
+        createdAt: Date;
+        updatedAt: Date;
         accountantId: string;
-        paymentType: import("@prisma/client").$Enums.PaymentType;
-        title: string;
-        amount: Prisma.Decimal;
-        paymentDate: Date | null;
-        dueDate: Date;
-        paymentMethod: import("@prisma/client").$Enums.PaymentMethod | null;
-        reference: string | null;
-        notes: string | null;
         status: import("@prisma/client").$Enums.PaymentStatus;
-        receiptPath: string | null;
+        clientId: string | null;
+        title: string;
         fileName: string | null;
         mimeType: string | null;
         fileSize: number | null;
+        dueDate: Date;
+        notes: string | null;
+        paymentType: import("@prisma/client").$Enums.PaymentType;
+        amount: Prisma.Decimal;
+        paymentDate: Date | null;
+        paymentMethod: import("@prisma/client").$Enums.PaymentMethod | null;
+        reference: string | null;
+        receiptPath: string | null;
         isRecurring: boolean;
         recurringFrequency: import("@prisma/client").$Enums.RecurringFrequency | null;
         recurringDayOfMonth: number | null;
@@ -645,46 +646,45 @@ export declare class PaymentsService {
         requiresInvoice: boolean;
         invoiceAttachedAt: Date | null;
         invoiceAttachedBy: string | null;
-        updatedAt: Date;
     }>;
     detachDocument(paymentId: string, documentId: string, accountantId: string): Promise<{
-        client: {
+        accountant: {
             id: string;
             companyName: string;
+        };
+        client: {
             user: {
+                name: string;
                 id: string;
                 email: string;
-                name: string;
             };
-        };
-        accountant: {
             id: string;
             companyName: string;
         };
         attachedDocuments: ({
             document: {
                 folder: {
-                    id: string;
                     name: string;
+                    id: string;
                     type: import("@prisma/client").$Enums.FolderType;
                     icon: string;
                     color: string;
                 };
             } & {
-                createdAt: Date;
                 id: string;
-                clientId: string;
-                title: string;
-                fileName: string;
-                mimeType: string;
-                fileSize: number;
+                description: string | null;
+                createdAt: Date;
                 updatedAt: Date;
                 deletedAt: Date | null;
+                clientId: string;
                 folderId: string | null;
                 requestId: string | null;
                 type: import("@prisma/client").$Enums.DocumentType;
-                description: string | null;
+                title: string;
                 filePath: string;
+                fileName: string;
+                mimeType: string;
+                fileSize: number;
                 createdById: string;
             };
         } & {
@@ -695,23 +695,24 @@ export declare class PaymentsService {
             attachedBy: string;
         })[];
     } & {
-        createdAt: Date;
         id: string;
-        clientId: string | null;
+        createdAt: Date;
+        updatedAt: Date;
         accountantId: string;
-        paymentType: import("@prisma/client").$Enums.PaymentType;
-        title: string;
-        amount: Prisma.Decimal;
-        paymentDate: Date | null;
-        dueDate: Date;
-        paymentMethod: import("@prisma/client").$Enums.PaymentMethod | null;
-        reference: string | null;
-        notes: string | null;
         status: import("@prisma/client").$Enums.PaymentStatus;
-        receiptPath: string | null;
+        clientId: string | null;
+        title: string;
         fileName: string | null;
         mimeType: string | null;
         fileSize: number | null;
+        dueDate: Date;
+        notes: string | null;
+        paymentType: import("@prisma/client").$Enums.PaymentType;
+        amount: Prisma.Decimal;
+        paymentDate: Date | null;
+        paymentMethod: import("@prisma/client").$Enums.PaymentMethod | null;
+        reference: string | null;
+        receiptPath: string | null;
         isRecurring: boolean;
         recurringFrequency: import("@prisma/client").$Enums.RecurringFrequency | null;
         recurringDayOfMonth: number | null;
@@ -720,6 +721,5 @@ export declare class PaymentsService {
         requiresInvoice: boolean;
         invoiceAttachedAt: Date | null;
         invoiceAttachedBy: string | null;
-        updatedAt: Date;
     }>;
 }
