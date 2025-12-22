@@ -204,6 +204,26 @@ export class PaymentsController {
   }
 
   // Document attachment endpoints
+  @Get(':id/documents')
+  @Roles(Role.ACCOUNTANT, Role.CLIENT)
+  @ApiOperation({ summary: 'Get all documents attached to a payment' })
+  @ApiResponse({ status: 200, description: 'Documents retrieved successfully' })
+  @ApiResponse({ status: 404, description: 'Payment not found' })
+  async getPaymentDocuments(@Param('id') id: string, @Request() req) {
+    if (req.user.role === Role.ACCOUNTANT) {
+      const accountantId = req.user.accountant.id;
+      return this.paymentsService.getPaymentDocuments(id, accountantId);
+    } else {
+      // CLIENT
+      const userId = req.user.id;
+      const client = await this.paymentsService.getClientByUserId(userId);
+      return this.paymentsService.getPaymentDocumentsForClient(
+        id,
+        client.id,
+      );
+    }
+  }
+
   @Post(':id/attach-document')
   @Roles(Role.ACCOUNTANT)
   @ApiOperation({ summary: 'Attach a document to a payment' })
@@ -237,5 +257,28 @@ export class PaymentsController {
   ) {
     const accountantId = req.user.accountant.id;
     return this.paymentsService.detachDocument(id, documentId, accountantId);
+  }
+
+  @Post(':id/charge')
+  @Roles(Role.ACCOUNTANT)
+  @ApiOperation({ summary: 'Send payment reminder notification to client' })
+  @ApiResponse({ status: 200, description: 'Payment reminder sent successfully' })
+  @ApiResponse({ status: 404, description: 'Payment not found' })
+  @ApiResponse({ status: 400, description: 'Payment cannot be charged' })
+  async chargePayment(@Param('id') id: string, @Request() req) {
+    const accountantId = req.user.accountant.id;
+    const userId = req.user.id;
+    return this.paymentsService.chargePayment(id, userId, accountantId);
+  }
+
+  @Post(':id/approve')
+  @Roles(Role.ACCOUNTANT)
+  @ApiOperation({ summary: 'Approve payment and mark as paid' })
+  @ApiResponse({ status: 200, description: 'Payment approved successfully' })
+  @ApiResponse({ status: 404, description: 'Payment not found' })
+  @ApiResponse({ status: 400, description: 'Payment cannot be approved' })
+  async approvePayment(@Param('id') id: string, @Request() req) {
+    const accountantId = req.user.accountant.id;
+    return this.paymentsService.approvePayment(id, accountantId);
   }
 }

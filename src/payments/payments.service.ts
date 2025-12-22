@@ -3,10 +3,11 @@ import { Cron, CronExpression } from '@nestjs/schedule';
 import { PrismaService } from '../prisma/prisma.service';
 import { EmailService } from '../email/email.service';
 import { LimitsService } from '../limits/limits.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { QueryPaymentsDto } from './dto/query-payments.dto';
 import { CreatePaymentDto } from './dto/create-payment.dto';
 import { UpdatePaymentDto } from './dto/update-payment.dto';
-import { Prisma, PaymentStatus } from '@prisma/client';
+import { Prisma, PaymentStatus, DocumentType, NotificationType } from '@prisma/client';
 import { PaymentType } from './enums/payment-type.enum';
 import * as path from 'path';
 import * as fs from 'fs';
@@ -19,6 +20,7 @@ export class PaymentsService {
     private prisma: PrismaService,
     private emailService: EmailService,
     private limitsService: LimitsService,
+    private notificationsService: NotificationsService,
   ) {}
 
   async findAll(queryDto: QueryPaymentsDto, accountantId: string) {
@@ -56,11 +58,11 @@ export class PaymentsService {
       where.clientId = clientId;
     }
 
-    // Add period filter
-    if (period) {
+    // Add period filter (uses dueDate)
+    if (period && period !== 'ALL') {
       const now = new Date();
       let periodStart: Date | null = null;
-      let periodEnd: Date = now;
+      let periodEnd: Date = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59); // Last day of current month
 
       switch (period) {
         case 'THIS_MONTH':
@@ -68,24 +70,23 @@ export class PaymentsService {
           break;
         case 'LAST_MONTH':
           periodStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-          periodEnd = new Date(now.getFullYear(), now.getMonth(), 0);
+          periodEnd = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59);
           break;
         case 'THIS_YEAR':
           periodStart = new Date(now.getFullYear(), 0, 1);
+          periodEnd = new Date(now.getFullYear(), 11, 31, 23, 59, 59);
           break;
-        default:
-          periodStart = null;
       }
 
       if (periodStart) {
-        where.createdAt = {
+        where.dueDate = {
           gte: periodStart,
           lte: periodEnd,
         };
       }
     }
 
-    // Add date range filter
+    // Add custom date range filter (overrides period if provided)
     if (startDate || endDate) {
       where.dueDate = {};
       if (startDate) {
@@ -280,15 +281,20 @@ export class PaymentsService {
       }
     }
 
-    // Determine status based on dates
-    let status: PaymentStatus = PaymentStatus.PENDING;
+    // Determine status based on dates and payment type
+    let status: PaymentStatus;
     const now = new Date();
     const dueDate = new Date(createPaymentDto.dueDate);
 
     if (createPaymentDto.paymentDate) {
       status = PaymentStatus.PAID;
+    } else if (paymentType === PaymentType.CLIENT) {
+      // CLIENT payments start as AWAITING_INVOICE (accountant must attach NF first)
+      status = PaymentStatus.AWAITING_INVOICE;
     } else if (dueDate < now) {
       status = PaymentStatus.OVERDUE;
+    } else {
+      status = PaymentStatus.PENDING;
     }
 
     // Create payment
@@ -334,6 +340,20 @@ export class PaymentsService {
         },
       },
     });
+
+    // Send notification to client if it's a CLIENT payment
+    if (paymentType === PaymentType.CLIENT && payment.clientId) {
+      await this.notificationsService.create({
+        clientId: payment.clientId,
+        type: NotificationType.PAYMENT_REGISTERED,
+        title: 'Novo pagamento registrado',
+        message: `Um novo pagamento de ${payment.title} no valor de R$ ${payment.amount} foi registrado. Aguardando a contadora anexar a Nota Fiscal.`,
+        metadata: {
+          paymentId: payment.id,
+          status: payment.status,
+        },
+      });
+    }
 
     return payment;
   }
@@ -745,6 +765,7 @@ export class PaymentsService {
     const {
       search,
       status,
+      period,
       startDate,
       endDate,
       sortBy = 'createdAt',
@@ -763,7 +784,35 @@ export class PaymentsService {
       where.status = status;
     }
 
-    // Add date range filter
+    // Add period filter (uses dueDate)
+    if (period && period !== 'ALL') {
+      const now = new Date();
+      let periodStart: Date | null = null;
+      let periodEnd: Date = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59); // Last day of current month
+
+      switch (period) {
+        case 'THIS_MONTH':
+          periodStart = new Date(now.getFullYear(), now.getMonth(), 1);
+          break;
+        case 'LAST_MONTH':
+          periodStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+          periodEnd = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59);
+          break;
+        case 'THIS_YEAR':
+          periodStart = new Date(now.getFullYear(), 0, 1);
+          periodEnd = new Date(now.getFullYear(), 11, 31, 23, 59, 59);
+          break;
+      }
+
+      if (periodStart) {
+        where.dueDate = {
+          gte: periodStart,
+          lte: periodEnd,
+        };
+      }
+    }
+
+    // Add custom date range filter (overrides period if provided)
     if (startDate || endDate) {
       where.dueDate = {};
       if (startDate) {
@@ -906,13 +955,53 @@ export class PaymentsService {
     file: Express.Multer.File,
     clientId: string,
   ) {
-    // Verify payment exists and belongs to client
-    const payment = await this.findOneForClient(id, clientId);
+    // Verify payment exists and belongs to client with attached documents
+    const payment = await this.prisma.payment.findFirst({
+      where: { id, clientId },
+      include: {
+        client: {
+          include: {
+            user: {
+              select: {
+                name: true,
+                email: true,
+              },
+            },
+          },
+        },
+        attachedDocuments: {
+          include: {
+            document: true,
+          },
+        },
+      },
+    });
 
-    // Only allow upload if payment is PAID
-    if (payment.status !== PaymentStatus.PAID) {
+    if (!payment) {
+      throw new NotFoundException('Pagamento não encontrado');
+    }
+
+    // Only allow upload if payment is READY_TO_PAY or AWAITING_VALIDATION
+    if (
+      payment.status !== PaymentStatus.READY_TO_PAY &&
+      payment.status !== PaymentStatus.AWAITING_VALIDATION
+    ) {
+      if (payment.status === PaymentStatus.AWAITING_INVOICE) {
+        throw new BadRequestException(
+          'Aguardando a contadora anexar a Nota Fiscal (NF) para este pagamento',
+        );
+      }
       throw new BadRequestException(
-        'Comprovante só pode ser enviado para pagamentos marcados como pagos',
+        'Comprovante só pode ser enviado para pagamentos prontos para pagamento',
+      );
+    }
+
+    // Double-check if payment has any document attached
+    const hasDocument = payment.attachedDocuments.length > 0;
+
+    if (!hasDocument) {
+      throw new BadRequestException(
+        'Comprovante só pode ser enviado após a contadora anexar a Nota Fiscal (NF)',
       );
     }
 
@@ -952,7 +1041,7 @@ export class PaymentsService {
 
     fs.writeFileSync(path.join(process.cwd(), filePath), file.buffer);
 
-    // Update payment with receipt info
+    // Update payment with receipt info and change status to AWAITING_VALIDATION
     const updatedPayment = await this.prisma.payment.update({
       where: { id },
       data: {
@@ -960,6 +1049,7 @@ export class PaymentsService {
         fileName: file.originalname,
         mimeType: file.mimetype,
         fileSize: file.size,
+        status: PaymentStatus.AWAITING_VALIDATION,
       },
       include: {
         client: {
@@ -993,6 +1083,19 @@ export class PaymentsService {
           `Failed to send payment receipt confirmation email: ${error.message}`,
         );
       });
+
+    // Send notification to accountant that client uploaded receipt
+    await this.notificationsService.create({
+      accountantId: payment.accountantId,
+      type: NotificationType.PAYMENT_REGISTERED,
+      title: 'Comprovante de pagamento enviado',
+      message: `O cliente ${updatedPayment.client.user.name} enviou o comprovante do pagamento "${updatedPayment.title}". Aguardando sua validação.`,
+      metadata: {
+        paymentId: updatedPayment.id,
+        clientId: updatedPayment.client.id,
+        status: PaymentStatus.AWAITING_VALIDATION,
+      },
+    });
 
     return updatedPayment;
   }
@@ -1151,8 +1254,8 @@ export class PaymentsService {
       },
     });
 
-    // Update payment status if needed
-    if (payment.requiresInvoice && payment.status === PaymentStatus.AWAITING_INVOICE) {
+    // Update payment status if it's the first document attached and status is AWAITING_INVOICE
+    if (payment.status === PaymentStatus.AWAITING_INVOICE) {
       await this.prisma.payment.update({
         where: { id: paymentId },
         data: {
@@ -1161,6 +1264,21 @@ export class PaymentsService {
           invoiceAttachedBy: userId,
         },
       });
+
+      // Send notification to client that document was attached
+      if (payment.clientId) {
+        await this.notificationsService.create({
+          clientId: payment.clientId,
+          type: NotificationType.DOCUMENT_AVAILABLE,
+          title: 'Nota Fiscal anexada',
+          message: `A Nota Fiscal do pagamento "${payment.title}" foi anexada. Agora você pode enviar o comprovante de pagamento.`,
+          metadata: {
+            paymentId: payment.id,
+            documentId,
+            status: PaymentStatus.READY_TO_PAY,
+          },
+        });
+      }
     }
 
     // Return updated payment with attached documents
@@ -1219,5 +1337,249 @@ export class PaymentsService {
 
     // Return updated payment
     return this.findOne(paymentId, accountantId);
+  }
+
+  /**
+   * Send payment reminder notification to client
+   * Creates a notification in the system (no email)
+   */
+  async chargePayment(id: string, userId: string, accountantId: string) {
+    // Verify payment exists and belongs to accountant
+    const payment = await this.prisma.payment.findFirst({
+      where: { id, accountantId },
+      include: {
+        client: {
+          include: {
+            user: {
+              select: {
+                id: true,
+                name: true,
+                email: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!payment) {
+      throw new NotFoundException('Pagamento não encontrado');
+    }
+
+    // Only allow charging unpaid payments (PENDING, AWAITING_INVOICE, READY_TO_PAY, AWAITING_VALIDATION, OVERDUE)
+    if (payment.status === PaymentStatus.PAID || payment.status === PaymentStatus.CANCELED) {
+      throw new BadRequestException(
+        'Não é possível cobrar pagamentos que já foram pagos ou cancelados',
+      );
+    }
+
+    // Must be a CLIENT payment (not OFFICE)
+    if (!payment.clientId) {
+      throw new BadRequestException(
+        'Apenas pagamentos de clientes podem ser cobrados',
+      );
+    }
+
+    // Format due date and amount
+    const dueDate = new Date(payment.dueDate);
+    const formattedDate = dueDate.toLocaleDateString('pt-BR', {
+      day: '2-digit',
+      month: 'long',
+      year: 'numeric',
+    });
+    const formattedAmount = new Intl.NumberFormat('pt-BR', {
+      style: 'currency',
+      currency: 'BRL',
+    }).format(Number(payment.amount));
+
+    // Calculate days overdue if applicable
+    const today = new Date();
+    const diffTime = today.getTime() - dueDate.getTime();
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    const isOverdue = diffDays > 0;
+
+    // Create notification message
+    let message = `Lembrete de pagamento: ${payment.title}\n`;
+    message += `Valor: ${formattedAmount}\n`;
+    message += `Vencimento: ${formattedDate}`;
+
+    if (isOverdue) {
+      message += `\n\n⚠️ Este pagamento está ${diffDays} dia${diffDays > 1 ? 's' : ''} em atraso.`;
+    }
+
+    // Send notification to client
+    await this.notificationsService.create({
+      clientId: payment.clientId,
+      type: NotificationType.PAYMENT_REGISTERED,
+      title: isOverdue ? 'Cobrança - Pagamento em Atraso' : 'Lembrete de Pagamento',
+      message,
+      metadata: {
+        paymentId: payment.id,
+        status: payment.status,
+        amount: payment.amount,
+        dueDate: payment.dueDate,
+        daysOverdue: isOverdue ? diffDays : 0,
+      },
+    });
+
+    return {
+      success: true,
+      message: 'Notificação de cobrança enviada com sucesso',
+      payment: {
+        id: payment.id,
+        title: payment.title,
+        amount: payment.amount,
+        dueDate: payment.dueDate,
+        status: payment.status,
+        client: payment.client,
+      },
+    };
+  }
+
+  /**
+   * Approve payment and mark as PAID
+   * Can only approve payments with status AWAITING_VALIDATION
+   */
+  async approvePayment(id: string, accountantId: string) {
+    // Verify payment exists and belongs to accountant
+    const payment = await this.prisma.payment.findFirst({
+      where: { id, accountantId },
+    });
+
+    if (!payment) {
+      throw new NotFoundException('Pagamento não encontrado');
+    }
+
+    // Only allow approval if payment has a receipt and is awaiting validation
+    if (payment.status !== PaymentStatus.AWAITING_VALIDATION) {
+      throw new BadRequestException(
+        'Apenas pagamentos aguardando validação podem ser aprovados',
+      );
+    }
+
+    if (!payment.receiptPath) {
+      throw new BadRequestException(
+        'Pagamento não possui comprovante anexado',
+      );
+    }
+
+    // Update payment status to PAID and set payment date
+    const updatedPayment = await this.prisma.payment.update({
+      where: { id },
+      data: {
+        status: PaymentStatus.PAID,
+        paymentDate: new Date(),
+      },
+      include: {
+        client: {
+          include: {
+            user: {
+              select: {
+                id: true,
+                name: true,
+                email: true,
+              },
+            },
+          },
+        },
+        attachedDocuments: {
+          include: {
+            document: {
+              select: {
+                id: true,
+                title: true,
+                fileName: true,
+                mimeType: true,
+                fileSize: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    // Send notification to client about payment approval
+    if (updatedPayment.client) {
+      await this.notificationsService.create({
+        clientId: updatedPayment.client.id,
+        type: NotificationType.PAYMENT_REGISTERED,
+        title: 'Pagamento aprovado',
+        message: `O pagamento "${updatedPayment.title}" foi aprovado pela contadora. O comprovante foi validado com sucesso!`,
+        metadata: {
+          paymentId: updatedPayment.id,
+          status: PaymentStatus.PAID,
+        },
+      });
+    }
+
+    return updatedPayment;
+  }
+
+  async getPaymentDocuments(paymentId: string, accountantId: string) {
+    // Verify payment exists and belongs to accountant
+    const payment = await this.prisma.payment.findFirst({
+      where: { id: paymentId, accountantId },
+      include: {
+        attachedDocuments: {
+          include: {
+            document: {
+              include: {
+                client: {
+                  include: {
+                    user: {
+                      select: {
+                        name: true,
+                        email: true,
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!payment) {
+      throw new NotFoundException('Pagamento não encontrado');
+    }
+
+    // Return only the documents array
+    return payment.attachedDocuments.map((ad) => ad.document);
+  }
+
+  async getPaymentDocumentsForClient(paymentId: string, clientId: string) {
+    // Verify payment exists and belongs to client
+    const payment = await this.prisma.payment.findFirst({
+      where: { id: paymentId, clientId },
+      include: {
+        attachedDocuments: {
+          include: {
+            document: {
+              include: {
+                client: {
+                  include: {
+                    user: {
+                      select: {
+                        name: true,
+                        email: true,
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!payment) {
+      throw new NotFoundException('Pagamento não encontrado');
+    }
+
+    // Return only the documents array
+    return payment.attachedDocuments.map((ad) => ad.document);
   }
 }

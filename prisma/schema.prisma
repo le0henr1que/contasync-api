@@ -43,6 +43,7 @@ enum PaymentStatus {
   PENDING
   AWAITING_INVOICE // Aguardando anexo de NF (para recorrentes)
   READY_TO_PAY // NF anexada, pronto para pagamento
+  AWAITING_VALIDATION // Comprovante enviado, aguardando validação do contador
   PAID
   OVERDUE
   CANCELED
@@ -175,10 +176,11 @@ model Accountant {
   createdAt            DateTime           @default(now())
   updatedAt            DateTime           @updatedAt
 
-  clients      Client[]
-  payments     Payment[]
-  subscription Subscription?
-  invitations  Invitation[]
+  clients       Client[]
+  payments      Payment[]
+  subscription  Subscription?
+  invitations   Invitation[]
+  notifications Notification[]
 
   @@index([cnpj])
   @@map("accountants")
@@ -413,18 +415,21 @@ model ActivityLog {
 }
 
 model Notification {
-  id        String           @id @default(cuid())
-  clientId  String
-  client    Client           @relation(fields: [clientId], references: [id], onDelete: Cascade)
-  type      NotificationType
-  title     String
-  message   String
-  isRead    Boolean          @default(false)
-  metadata  Json?
-  createdAt DateTime         @default(now())
-  readAt    DateTime?
+  id           String           @id @default(cuid())
+  clientId     String?
+  client       Client?          @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  accountantId String?
+  accountant   Accountant?      @relation(fields: [accountantId], references: [id], onDelete: Cascade)
+  type         NotificationType
+  title        String
+  message      String
+  isRead       Boolean          @default(false)
+  metadata     Json?
+  createdAt    DateTime         @default(now())
+  readAt       DateTime?
 
   @@index([clientId])
+  @@index([accountantId])
   @@index([isRead])
   @@index([createdAt])
   @@map("notifications")

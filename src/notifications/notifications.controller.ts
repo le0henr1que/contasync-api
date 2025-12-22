@@ -93,4 +93,74 @@ export class NotificationsController {
     const clientId = req.user.clientId;
     return this.notificationsService.markAsRead(notificationId, clientId);
   }
+
+  // ===== ACCOUNTANT ENDPOINTS =====
+
+  /**
+   * Get unread notifications count for accountant
+   * GET /api/notifications/accountant/unread-count
+   */
+  @Get('accountant/unread-count')
+  @Roles(Role.ACCOUNTANT)
+  async getUnreadCountForAccountant(@Request() req: any) {
+    const accountantId = req.user.accountant.id;
+    const count = await this.notificationsService.getUnreadCountForAccountant(accountantId);
+    return { count };
+  }
+
+  /**
+   * Get all notifications for the current accountant with pagination and filtering
+   * GET /api/notifications/accountant/me?page=1&limit=20&isRead=false&type=PAYMENT_OVERDUE
+   */
+  @Get('accountant/me')
+  @Roles(Role.ACCOUNTANT)
+  async getMyNotificationsAsAccountant(
+    @Request() req: any,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+    @Query('isRead') isRead?: string,
+    @Query('type') type?: NotificationType,
+  ) {
+    const accountantId = req.user.accountant.id;
+
+    const filters: NotificationFilters = {
+      page: page ? parseInt(page, 10) : 1,
+      limit: limit ? parseInt(limit, 10) : 20,
+    };
+
+    if (isRead !== undefined) {
+      filters.isRead = isRead === 'true';
+    }
+
+    if (type) {
+      filters.type = type;
+    }
+
+    return this.notificationsService.findAllForAccountant(accountantId, filters);
+  }
+
+  /**
+   * Mark all notifications as read for accountant
+   * PATCH /api/notifications/accountant/mark-all-read
+   */
+  @Patch('accountant/mark-all-read')
+  @Roles(Role.ACCOUNTANT)
+  async markAllAsReadForAccountant(@Request() req: any) {
+    const accountantId = req.user.accountant.id;
+    return this.notificationsService.markAllAsReadForAccountant(accountantId);
+  }
+
+  /**
+   * Mark a notification as read for accountant
+   * PATCH /api/notifications/accountant/:id/read
+   */
+  @Patch('accountant/:id/read')
+  @Roles(Role.ACCOUNTANT)
+  async markAsReadForAccountant(
+    @Param('id') notificationId: string,
+    @Request() req: any,
+  ) {
+    const accountantId = req.user.accountant.id;
+    return this.notificationsService.markAsReadForAccountant(notificationId, accountantId);
+  }
 }

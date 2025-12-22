@@ -10,6 +10,7 @@ import {
   UploadedFile,
   Body,
   BadRequestException,
+  NotFoundException,
   HttpCode,
   HttpStatus,
   Param,
@@ -112,6 +113,56 @@ export class DocumentsController {
   async findAll(@Query() queryDto: QueryDocumentsDto, @Request() req) {
     const accountantId = req.user.accountant.id;
     return this.documentsService.findAll(queryDto, accountantId);
+  }
+
+  // Accountant gets simple list of client documents (for modals, etc)
+  @Get('client/:clientId')
+  @Roles(Role.ACCOUNTANT)
+  @ApiOperation({ summary: 'Get list of client documents (for accountant)' })
+  @ApiResponse({ status: 200, description: 'Returns list of documents' })
+  @ApiResponse({ status: 404, description: 'Client not found' })
+  async getClientDocuments(
+    @Param('clientId') clientId: string,
+    @Request() req,
+  ) {
+    const accountantId = req.user.accountant.id;
+
+    // Verify client belongs to accountant
+    const client = await this.documentsService['prisma'].client.findFirst({
+      where: {
+        id: clientId,
+        accountantId,
+        deletedAt: null,
+      },
+    });
+
+    if (!client) {
+      throw new NotFoundException('Cliente não encontrado');
+    }
+
+    // Get all documents for this client
+    const documents = await this.documentsService['prisma'].document.findMany({
+      where: {
+        clientId,
+        deletedAt: null,
+      },
+      include: {
+        folder: {
+          select: {
+            id: true,
+            name: true,
+            type: true,
+            icon: true,
+            color: true,
+          },
+        },
+      },
+      orderBy: {
+        createdAt: 'desc',
+      },
+    });
+
+    return { documents };
   }
 
   // Accountant gets client documents grouped by folders
