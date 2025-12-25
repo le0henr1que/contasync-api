@@ -5,11 +5,12 @@ import { PrismaModule } from '../prisma/prisma.module';
 import { EmailModule } from '../email/email.module';
 import { LimitsModule } from '../limits/limits.module';
 import { NotificationsModule } from '../notifications/notifications.module';
+import { StorageModule } from '../storage/storage.module';
 import { PlanLimitsGuard } from '../common/guards/plan-limits.guard';
 import { RecurringPaymentsCron } from './cron/recurring-payments.cron';
 
 @Module({
-  imports: [PrismaModule, EmailModule, LimitsModule, NotificationsModule],
+  imports: [PrismaModule, EmailModule, LimitsModule, NotificationsModule, StorageModule],
   controllers: [PaymentsController],
   providers: [PaymentsService, PlanLimitsGuard, RecurringPaymentsCron],
 })

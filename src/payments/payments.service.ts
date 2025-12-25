@@ -1,16 +1,17 @@
 import { Injectable, NotFoundException, BadRequestException, ForbiddenException, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { PrismaService } from '../prisma/prisma.service';
 import { EmailService } from '../email/email.service';
 import { LimitsService } from '../limits/limits.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { StorageService } from '../storage/storage.service';
 import { QueryPaymentsDto } from './dto/query-payments.dto';
 import { CreatePaymentDto } from './dto/create-payment.dto';
 import { UpdatePaymentDto } from './dto/update-payment.dto';
 import { Prisma, PaymentStatus, DocumentType, NotificationType } from '@prisma/client';
 import { PaymentType } from './enums/payment-type.enum';
 import * as path from 'path';
-import * as fs from 'fs';
 
 @Injectable()
 export class PaymentsService {
@@ -21,6 +22,8 @@ export class PaymentsService {
     private emailService: EmailService,
     private limitsService: LimitsService,
     private notificationsService: NotificationsService,
+    private storageService: StorageService,
+    private configService: ConfigService,
   ) {}
 
   async findAll(queryDto: QueryPaymentsDto, accountantId: string) {
@@ -425,7 +428,13 @@ export class PaymentsService {
     file: Express.Multer.File,
     accountantId: string,
   ) {
+    console.log('\n📨 ========== UPLOAD RECEIPT (ACCOUNTANT) STARTED ==========');
+    console.log('💳 Payment ID:', id);
+    console.log('🏢 Accountant ID:', accountantId);
+    console.log('📄 File:', file.originalname);
+
     // Verify payment exists and belongs to accountant's client
+    console.log('⏳ Verifying payment...');
     const payment = await this.prisma.payment.findFirst({
       where: {
         id,
@@ -437,12 +446,15 @@ export class PaymentsService {
     });
 
     if (!payment) {
+      console.error('❌ Payment not found!');
       throw new NotFoundException('Pagamento não encontrado');
     }
+    console.log('✅ Payment verified');
 
     // Validate file type (PDF, JPG, PNG)
     const allowedMimeTypes = ['application/pdf', 'image/jpeg', 'image/png'];
     if (!allowedMimeTypes.includes(file.mimetype)) {
+      console.error('❌ Invalid file type:', file.mimetype);
       throw new BadRequestException(
         'Tipo de arquivo inválido. Apenas PDF, JPG e PNG são permitidos.',
       );
@@ -451,36 +463,40 @@ export class PaymentsService {
     // Validate file size (max 10MB)
     const maxSize = 10 * 1024 * 1024; // 10MB in bytes
     if (file.size > maxSize) {
+      console.error('❌ File too large:', file.size);
       throw new BadRequestException('Arquivo muito grande. Tamanho máximo: 10MB');
     }
+    console.log('✅ File validation passed');
 
-    // Delete old receipt if exists
+    // Delete old receipt from S3 if exists
     if (payment.receiptPath) {
-      const oldFilePath = path.join(process.cwd(), payment.receiptPath);
-      if (fs.existsSync(oldFilePath)) {
-        fs.unlinkSync(oldFilePath);
+      console.log('🗑️  Deleting old receipt from S3...');
+      try {
+        await this.storageService.deleteFile(payment.receiptPath);
+        console.log('✅ Old receipt deleted');
+      } catch (error) {
+        console.error('⚠️  Error deleting old receipt:', error.message);
       }
     }
 
-    // Create unique filename
+    // Generate unique S3 key for the receipt
+    console.log('🔑 Generating S3 key...');
     const fileExt = path.extname(file.originalname);
     const timestamp = Date.now();
-    const uniqueFilename = `payment-${id}-${timestamp}${fileExt}`;
-    const filePath = path.join('uploads', 'receipts', uniqueFilename);
+    const s3Key = `receipts/payment-${id}-${timestamp}${fileExt}`;
+    console.log('✅ S3 Key generated:', s3Key);
 
-    // Save file to disk
-    const uploadsDir = path.join(process.cwd(), 'uploads', 'receipts');
-    if (!fs.existsSync(uploadsDir)) {
-      fs.mkdirSync(uploadsDir, { recursive: true });
-    }
+    // Upload file to S3
+    console.log('☁️  Uploading receipt to S3...');
+    await this.storageService.uploadFile(s3Key, file.buffer, file.mimetype);
+    console.log('✅ Receipt uploaded to S3!');
 
-    fs.writeFileSync(path.join(process.cwd(), filePath), file.buffer);
-
-    // Update payment with receipt info
+    // Update payment with receipt info (S3 key in receiptPath)
+    console.log('💾 Updating payment record...');
     const updatedPayment = await this.prisma.payment.update({
       where: { id },
       data: {
-        receiptPath: filePath,
+        receiptPath: s3Key, // Store S3 key instead of local path
         fileName: file.originalname,
         mimeType: file.mimetype,
         fileSize: file.size,
@@ -501,6 +517,10 @@ export class PaymentsService {
         },
       },
     });
+
+    console.log('✅ Payment updated with receipt');
+    console.log('📁 S3 Path:', updatedPayment.receiptPath);
+    console.log('========== UPLOAD RECEIPT COMPLETED ==========\n');
 
     return updatedPayment;
   }
@@ -955,11 +975,27 @@ export class PaymentsService {
     file: Express.Multer.File,
     clientId: string,
   ) {
+    console.log('\n📨 ========== UPLOAD RECEIPT (CLIENT) STARTED ==========');
+    console.log('💳 Payment ID:', id);
+    console.log('👤 Client ID:', clientId);
+    console.log('📄 File:', file.originalname);
+
     // Verify payment exists and belongs to client with attached documents
+    console.log('⏳ Verifying payment...');
     const payment = await this.prisma.payment.findFirst({
       where: { id, clientId },
       include: {
         client: {
+          include: {
+            user: {
+              select: {
+                name: true,
+                email: true,
+              },
+            },
+          },
+        },
+        accountant: {
           include: {
             user: {
               select: {
@@ -978,8 +1014,10 @@ export class PaymentsService {
     });
 
     if (!payment) {
+      console.error('❌ Payment not found!');
       throw new NotFoundException('Pagamento não encontrado');
     }
+    console.log('✅ Payment verified');
 
     // Only allow upload if payment is READY_TO_PAY or AWAITING_VALIDATION
     if (
@@ -1016,36 +1054,40 @@ export class PaymentsService {
     // Validate file size (max 10MB)
     const maxSize = 10 * 1024 * 1024; // 10MB in bytes
     if (file.size > maxSize) {
+      console.error('❌ File too large:', file.size);
       throw new BadRequestException('Arquivo muito grande. Tamanho máximo: 10MB');
     }
+    console.log('✅ File validation passed');
 
-    // Delete old receipt if exists
+    // Delete old receipt from S3 if exists
     if (payment.receiptPath) {
-      const oldFilePath = path.join(process.cwd(), payment.receiptPath);
-      if (fs.existsSync(oldFilePath)) {
-        fs.unlinkSync(oldFilePath);
+      console.log('🗑️  Deleting old receipt from S3...');
+      try {
+        await this.storageService.deleteFile(payment.receiptPath);
+        console.log('✅ Old receipt deleted');
+      } catch (error) {
+        console.error('⚠️  Error deleting old receipt:', error.message);
       }
     }
 
-    // Create unique filename
+    // Generate unique S3 key for the receipt
+    console.log('🔑 Generating S3 key...');
     const fileExt = path.extname(file.originalname);
     const timestamp = Date.now();
-    const uniqueFilename = `payment-${id}-${timestamp}${fileExt}`;
-    const filePath = path.join('uploads', 'receipts', uniqueFilename);
+    const s3Key = `receipts/payment-${id}-${timestamp}${fileExt}`;
+    console.log('✅ S3 Key generated:', s3Key);
 
-    // Save file to disk
-    const uploadsDir = path.join(process.cwd(), 'uploads', 'receipts');
-    if (!fs.existsSync(uploadsDir)) {
-      fs.mkdirSync(uploadsDir, { recursive: true });
-    }
-
-    fs.writeFileSync(path.join(process.cwd(), filePath), file.buffer);
+    // Upload file to S3
+    console.log('☁️  Uploading receipt to S3...');
+    await this.storageService.uploadFile(s3Key, file.buffer, file.mimetype);
+    console.log('✅ Receipt uploaded to S3!');
 
     // Update payment with receipt info and change status to AWAITING_VALIDATION
+    console.log('💾 Updating payment record...');
     const updatedPayment = await this.prisma.payment.update({
       where: { id },
       data: {
-        receiptPath: filePath,
+        receiptPath: s3Key, // Store S3 key instead of local path
         fileName: file.originalname,
         mimeType: file.mimetype,
         fileSize: file.size,
@@ -1065,7 +1107,7 @@ export class PaymentsService {
       },
     });
 
-    // Send confirmation email (async, non-blocking)
+    // Send confirmation email to client (async, non-blocking)
     this.emailService
       .sendPaymentReceiptConfirmation(updatedPayment.client.user.email, {
         clientName: updatedPayment.client.user.name,
@@ -1081,6 +1123,25 @@ export class PaymentsService {
       .catch((error) => {
         this.logger.error(
           `Failed to send payment receipt confirmation email: ${error.message}`,
+        );
+      });
+
+    // Send notification email to accountant (async, non-blocking)
+    this.emailService
+      .sendPaymentReceiptToAccountant(payment.accountant.user.email, {
+        accountantName: payment.accountant.user.name,
+        clientName: updatedPayment.client.user.name,
+        paymentTitle: updatedPayment.title,
+        paymentReference: updatedPayment.reference || 'N/A',
+        amount: new Intl.NumberFormat('pt-BR', {
+          style: 'currency',
+          currency: 'BRL',
+        }).format(Number(updatedPayment.amount)),
+        portalUrl: this.configService.get<string>('APP_URL', 'http://localhost:3001'),
+      })
+      .catch((error) => {
+        this.logger.error(
+          `Failed to send payment receipt notification to accountant: ${error.message}`,
         );
       });
 
@@ -1101,6 +1162,10 @@ export class PaymentsService {
   }
 
   async delete(id: string, accountantId: string) {
+    console.log('\n🗑️  ========== DELETE PAYMENT STARTED ==========');
+    console.log('💳 Payment ID:', id);
+    console.log('🏢 Accountant ID:', accountantId);
+
     // Verify payment exists and belongs to accountant
     const payment = await this.prisma.payment.findFirst({
       where: {
@@ -1110,21 +1175,29 @@ export class PaymentsService {
     });
 
     if (!payment) {
+      console.error('❌ Payment not found!');
       throw new NotFoundException('Pagamento não encontrado');
     }
 
-    // Delete receipt file if exists
+    // Delete receipt file from S3 if exists
     if (payment.receiptPath) {
-      const filePath = path.join(process.cwd(), payment.receiptPath);
-      if (fs.existsSync(filePath)) {
-        fs.unlinkSync(filePath);
+      console.log('🗑️  Deleting receipt from S3...');
+      try {
+        await this.storageService.deleteFile(payment.receiptPath);
+        console.log('✅ Receipt deleted from S3');
+      } catch (error) {
+        console.error('⚠️  Error deleting receipt from S3:', error.message);
       }
     }
 
     // Delete payment from database
+    console.log('💾 Deleting payment from database...');
     await this.prisma.payment.delete({
       where: { id },
     });
+
+    console.log('✅ Payment deleted successfully');
+    console.log('========== DELETE PAYMENT COMPLETED ==========\n');
 
     return { message: 'Pagamento deletado com sucesso' };
   }

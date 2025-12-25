@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import * as nodemailer from 'nodemailer';
+import * as https from 'https';
 import * as handlebars from 'handlebars';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -14,65 +14,160 @@ export interface EmailOptions {
 
 @Injectable()
 export class EmailService {
-  private transporter: nodemailer.Transporter;
   private readonly logger = new Logger(EmailService.name);
   private readonly templatesPath = path.join(process.cwd(), 'email-templates');
+  private readonly infobipApiKey: string;
+  private readonly infobipBaseUrl: string;
+  private readonly infobipSender: string;
 
   constructor(private configService: ConfigService) {
-    this.initializeTransporter();
-  }
+    this.infobipApiKey = this.configService.get<string>('INFOBIP_API_KEY');
+    this.infobipBaseUrl = this.configService.get<string>('INFOBIP_BASE_URL');
+    this.infobipSender = this.configService.get<string>('INFOBIP_SENDER');
 
-  private initializeTransporter() {
-    const smtpHost = this.configService.get<string>('SMTP_HOST', 'sandbox.smtp.mailtrap.io');
-    const smtpPort = this.configService.get<number>('SMTP_PORT', 2525);
-    const smtpSecure = this.configService.get<string>('SMTP_SECURE') === 'true';
-    const smtpUser = this.configService.get<string>('SMTP_USER');
-    const smtpPass = this.configService.get<string>('SMTP_PASS');
+    console.log('🚀 ========== INFOBIP EMAIL SERVICE INITIALIZED ==========');
+    console.log('📧 Infobip Base URL:', this.infobipBaseUrl);
+    console.log('📧 Infobip Sender:', this.infobipSender);
+    console.log('🔑 API Key:', this.infobipApiKey ? `${this.infobipApiKey.substring(0, 20)}...` : 'MISSING');
+    console.log('========== INFOBIP INITIALIZATION COMPLETE ==========\n');
 
-    // Debug: log RAW environment variables
-    this.logger.log(`Raw env check - SMTP_USER from process.env: ${process.env.SMTP_USER ? 'EXISTS' : 'MISSING'}, from ConfigService: ${smtpUser ? 'EXISTS' : 'MISSING'}`);
-    this.logger.log(`SMTP Config - Host: ${smtpHost}, Port: ${smtpPort}, User: ${smtpUser || 'MISSING'}, Pass: ${smtpPass ? '***' : 'MISSING'}`);
+    if (!this.infobipApiKey || !this.infobipBaseUrl || !this.infobipSender) {
+      this.logger.error('Missing Infobip configuration. Please check your environment variables.');
+      throw new Error('Infobip configuration is incomplete');
+    }
 
-    const emailConfig = {
-      host: smtpHost,
-      port: smtpPort,
-      secure: smtpSecure,
-      auth: {
-        user: smtpUser,
-        pass: smtpPass,
-      },
-    };
-
-    this.transporter = nodemailer.createTransport(emailConfig);
-
-    // Verify connection
-    this.transporter.verify((error) => {
-      if (error) {
-        this.logger.error('Email transporter verification failed:', error);
-      } else {
-        this.logger.log('Email service is ready to send emails');
-      }
-    });
+    this.logger.log('Infobip Email service initialized successfully');
   }
 
   async sendEmail(options: EmailOptions): Promise<void> {
-    try {
-      const html = await this.renderTemplate(options.template, options.context);
-      const smtpFrom = this.configService.get<string>('SMTP_FROM', 'ContaSync <noreply@contasync.com>');
+    console.log('\n📨 ========== INFOBIP EMAIL SEND STARTED ==========');
+    console.log('📧 To:', options.to);
+    console.log('📋 Subject:', options.subject);
+    console.log('📄 Template:', options.template);
+    console.log('🔧 Context Keys:', Object.keys(options.context));
 
-      const mailOptions = {
-        from: smtpFrom,
-        to: Array.isArray(options.to) ? options.to.join(',') : options.to,
-        subject: options.subject,
-        html,
+    try {
+      // Render the HTML template
+      console.log('⏳ Rendering HTML template...');
+      const htmlContent = await this.renderTemplate(options.template, options.context);
+      console.log('✅ Template rendered successfully (length:', htmlContent.length, 'chars)');
+
+      // Prepare recipients array
+      const recipients = Array.isArray(options.to) ? options.to : [options.to];
+      console.log('👥 Recipients prepared:', recipients.length, 'recipient(s)');
+
+      // Prepare Infobip API payload
+      const payload = {
+        messages: recipients.map((email) => ({
+          destinations: [
+            {
+              to: [
+                {
+                  destination: email,
+                },
+              ],
+            },
+          ],
+          sender: this.infobipSender,
+          content: {
+            subject: options.subject,
+            html: htmlContent,
+          },
+        })),
       };
 
-      const info = await this.transporter.sendMail(mailOptions);
-      this.logger.log(`Email sent successfully: ${info.messageId}`);
+      console.log('📦 Payload prepared with', payload.messages.length, 'message(s)');
+      console.log('🌐 Sending to Infobip API...');
+
+      // Send email via Infobip API
+      await this.sendViaInfobip(payload);
+
+      console.log('✅ EMAIL SENT SUCCESSFULLY via Infobip!');
+      console.log('========== INFOBIP EMAIL SEND COMPLETED ==========\n');
     } catch (error) {
-      this.logger.error(`Failed to send email: ${error.message}`, error.stack);
+      console.error('❌ ========== INFOBIP EMAIL SEND FAILED ==========');
+      console.error('🔴 Error:', error.message);
+      console.error('📋 Error Stack:', error.stack);
+      console.error('========== INFOBIP EMAIL SEND ERROR END ==========\n');
+
+      this.logger.error(`Failed to send email via Infobip: ${error.message}`, error.stack);
       throw error;
     }
+  }
+
+  private sendViaInfobip(payload: any): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const postData = JSON.stringify(payload);
+
+      console.log('📡 Preparing HTTPS request to Infobip...');
+      console.log('🔗 Host:', this.infobipBaseUrl);
+      console.log('📍 Path: /email/4/messages');
+      console.log('📊 Payload size:', postData.length, 'bytes');
+
+      const options = {
+        method: 'POST',
+        hostname: this.infobipBaseUrl,
+        path: '/email/4/messages',
+        headers: {
+          Authorization: `App ${this.infobipApiKey}`,
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+          'Content-Length': Buffer.byteLength(postData),
+        },
+      };
+
+      console.log('🔐 Authorization header set');
+      console.log('📤 Initiating HTTPS request...');
+
+      const req = https.request(options, (res) => {
+        const chunks: Buffer[] = [];
+
+        console.log(`📥 Response status: ${res.statusCode}`);
+        console.log(`📥 Response headers:`, res.headers);
+
+        res.on('data', (chunk: Buffer) => {
+          chunks.push(chunk);
+          console.log(`📦 Received chunk: ${chunk.length} bytes`);
+        });
+
+        res.on('end', () => {
+          const body = Buffer.concat(chunks);
+          const responseText = body.toString();
+
+          console.log('✅ Response received completely');
+          console.log('📊 Response body:', responseText);
+
+          if (res.statusCode >= 200 && res.statusCode < 300) {
+            console.log('✅ Infobip API call successful!');
+            this.logger.log(`Email sent successfully via Infobip: ${responseText}`);
+            resolve();
+          } else {
+            console.error('❌ Infobip API returned error status:', res.statusCode);
+            console.error('❌ Response:', responseText);
+            this.logger.error(`Infobip API error (${res.statusCode}): ${responseText}`);
+            reject(new Error(`Infobip API error: ${res.statusCode} - ${responseText}`));
+          }
+        });
+
+        res.on('error', (error) => {
+          console.error('❌ Response error:', error);
+          this.logger.error('Infobip response error:', error);
+          reject(error);
+        });
+      });
+
+      req.on('error', (error) => {
+        console.error('❌ Request error:', error);
+        this.logger.error('Infobip request error:', error);
+        reject(error);
+      });
+
+      console.log('📤 Writing payload to request...');
+      req.write(postData);
+
+      console.log('✅ Payload written, ending request...');
+      req.end();
+    });
   }
 
   private async renderTemplate(
@@ -80,13 +175,26 @@ export class EmailService {
     context: Record<string, any>,
   ): Promise<string> {
     try {
+      console.log(`📄 Loading template: ${templateName}.hbs`);
       const templatePath = path.join(this.templatesPath, `${templateName}.hbs`);
+
+      if (!fs.existsSync(templatePath)) {
+        console.error(`❌ Template file not found: ${templatePath}`);
+        throw new Error(`Email template ${templateName} not found`);
+      }
+
       const templateSource = fs.readFileSync(templatePath, 'utf-8');
+      console.log(`✅ Template loaded (${templateSource.length} chars)`);
+
       const template = handlebars.compile(templateSource);
-      return template(context);
+      const rendered = template(context);
+
+      console.log(`✅ Template rendered (${rendered.length} chars)`);
+      return rendered;
     } catch (error) {
+      console.error(`❌ Failed to render template ${templateName}:`, error);
       this.logger.error(`Failed to render template ${templateName}:`, error);
-      throw new Error(`Email template ${templateName} not found`);
+      throw new Error(`Email template ${templateName} not found or failed to render`);
     }
   }
 
@@ -99,6 +207,7 @@ export class EmailService {
       temporaryPassword?: string;
     },
   ): Promise<void> {
+    console.log('\n🎯 Sending CLIENT INVITATION email to:', email);
     await this.sendEmail({
       to: email,
       subject: 'Bem-vindo ao ContaSync - Acesso ao Portal do Cliente',
@@ -117,6 +226,7 @@ export class EmailService {
       portalUrl: string;
     },
   ): Promise<void> {
+    console.log('\n🎯 Sending DOCUMENT REQUEST email to:', email);
     await this.sendEmail({
       to: email,
       subject: 'Solicitação de Documento - ContaSync',
@@ -134,6 +244,7 @@ export class EmailService {
       date: string;
     },
   ): Promise<void> {
+    console.log('\n🎯 Sending PAYMENT RECEIPT CONFIRMATION email to:', email);
     await this.sendEmail({
       to: email,
       subject: 'Comprovante de Pagamento Recebido - ContaSync',
@@ -153,6 +264,7 @@ export class EmailService {
       portalUrl: string;
     },
   ): Promise<void> {
+    console.log('\n🎯 Sending OVERDUE PAYMENT REMINDER email to:', email);
     await this.sendEmail({
       to: email,
       subject: 'Lembrete: Pagamento em Atraso - ContaSync',
@@ -170,6 +282,7 @@ export class EmailService {
       portalUrl: string;
     },
   ): Promise<void> {
+    console.log('\n🎯 Sending DOCUMENT AVAILABLE NOTIFICATION email to:', email);
     await this.sendEmail({
       to: email,
       subject: 'Novo Documento Disponível - ContaSync',
@@ -193,6 +306,7 @@ export class EmailService {
       plansUrl: string;
     },
   ): Promise<void> {
+    console.log('\n🎯 Sending TRIAL EXPIRING 4 DAYS email to:', email);
     await this.sendEmail({
       to: email,
       subject: 'Seu trial termina em 4 dias - ContaSync',
@@ -216,6 +330,7 @@ export class EmailService {
       plansUrl: string;
     },
   ): Promise<void> {
+    console.log('\n🎯 Sending TRIAL EXPIRING 1 DAY email to:', email);
     await this.sendEmail({
       to: email,
       subject: 'Última chance! Seu trial termina amanhã - ContaSync',
@@ -232,6 +347,7 @@ export class EmailService {
       plansUrl: string;
     },
   ): Promise<void> {
+    console.log('\n🎯 Sending TRIAL EXPIRED email to:', email);
     await this.sendEmail({
       to: email,
       subject: 'Seu trial expirou - ContaSync',
@@ -249,10 +365,31 @@ export class EmailService {
       loginUrl: string;
     },
   ): Promise<void> {
+    console.log('\n🎯 Sending WELCOME NEW ACCOUNT email to:', email);
     await this.sendEmail({
       to: email,
       subject: 'Bem-vindo ao ContaSync - Sua conta está ativa!',
       template: 'welcome-new-account',
+      context: data,
+    });
+  }
+
+  async sendPaymentReceiptToAccountant(
+    email: string,
+    data: {
+      accountantName: string;
+      clientName: string;
+      paymentTitle: string;
+      paymentReference: string;
+      amount: string;
+      portalUrl: string;
+    },
+  ): Promise<void> {
+    console.log('\n🎯 Sending PAYMENT RECEIPT TO ACCOUNTANT email to:', email);
+    await this.sendEmail({
+      to: email,
+      subject: 'Comprovante de Pagamento Recebido - Aguardando Validação',
+      template: 'payment-receipt-accountant',
       context: data,
     });
   }

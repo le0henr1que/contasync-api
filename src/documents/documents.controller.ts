@@ -18,7 +18,6 @@ import {
   StreamableFile,
 } from '@nestjs/common';
 import type { Response } from 'express';
-import { createReadStream } from 'fs';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiTags, ApiOperation, ApiResponse, ApiConsumes, ApiBearerAuth } from '@nestjs/swagger';
 import { DocumentsService } from './documents.service';
@@ -257,17 +256,15 @@ export class DocumentsController {
   ) {
     const userId = req.user.id;
     const client = await this.documentsService.getClientByUserId(userId);
-    const { filePath, fileName, mimeType } =
+    const { fileStream, fileName, mimeType } =
       await this.documentsService.getDocumentFileForClient(id, client.id);
-
-    const file = createReadStream(filePath);
 
     res.set({
       'Content-Type': mimeType,
       'Content-Disposition': `attachment; filename="${fileName}"`,
     });
 
-    return new StreamableFile(file);
+    return new StreamableFile(fileStream);
   }
 
   @Get(':id')
@@ -285,17 +282,15 @@ export class DocumentsController {
     @Res({ passthrough: true }) res: Response,
   ) {
     const accountantId = req.user.accountant.id;
-    const { filePath, fileName, mimeType } =
+    const { fileStream, fileName, mimeType } =
       await this.documentsService.getDocumentFile(id, accountantId);
-
-    const file = createReadStream(filePath);
 
     res.set({
       'Content-Type': mimeType,
       'Content-Disposition': `attachment; filename="${fileName}"`,
     });
 
-    return new StreamableFile(file);
+    return new StreamableFile(fileStream);
   }
 
   @Post('upload-response')

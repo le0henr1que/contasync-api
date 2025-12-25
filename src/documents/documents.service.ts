@@ -1,12 +1,12 @@
 import { Injectable, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { StorageService } from '../storage/storage.service';
 import { QueryDocumentsDto } from './dto/query-documents.dto';
 import { UploadDocumentDto } from './dto/upload-document.dto';
 import { RequestDocumentDto } from './dto/request-document.dto';
 import { UploadResponseDto } from './dto/upload-response.dto';
 import { Prisma, RequestStatus, DocumentType } from '@prisma/client';
 import * as path from 'path';
-import * as fs from 'fs';
 import { LimitsService } from '../limits/limits.service';
 
 @Injectable()
@@ -14,6 +14,7 @@ export class DocumentsService {
   constructor(
     private prisma: PrismaService,
     private limitsService: LimitsService,
+    private storageService: StorageService,
   ) {}
 
   async findAll(queryDto: QueryDocumentsDto, accountantId: string) {
@@ -116,17 +117,29 @@ export class DocumentsService {
     userId: string,
     accountantId: string,
   ) {
+    console.log('\n📋 ========== DOCUMENT UPLOAD STARTED ==========');
+    console.log('👤 User ID:', userId);
+    console.log('🏢 Accountant ID:', accountantId);
+    console.log('📂 Client ID:', uploadDto.clientId);
+    console.log('📄 File Name:', file.originalname);
+    console.log('📊 File Size:', file.size, 'bytes');
+    console.log('🎭 MIME Type:', file.mimetype);
+
     // Check document limit before uploading
+    console.log('⏳ Checking document limits...');
     const limitCheck = await this.limitsService.checkDocumentLimit(uploadDto.clientId);
     if (!limitCheck.allowed) {
+      console.error('❌ Document limit exceeded!');
       throw new ForbiddenException({
         message: limitCheck.message,
         upgradeMessage: limitCheck.upgradeMessage,
         usage: limitCheck.usage,
       });
     }
+    console.log('✅ Document limit OK');
 
     // Verify client belongs to accountant
+    console.log('⏳ Verifying client ownership...');
     const client = await this.prisma.client.findFirst({
       where: {
         id: uploadDto.clientId,
@@ -136,11 +149,14 @@ export class DocumentsService {
     });
 
     if (!client) {
+      console.error('❌ Client not found!');
       throw new NotFoundException('Cliente não encontrado');
     }
+    console.log('✅ Client verified');
 
     // Validate folder if provided
     if (uploadDto.folderId) {
+      console.log('⏳ Validating folder...');
       const folder = await this.prisma.documentFolder.findFirst({
         where: {
           id: uploadDto.folderId,
@@ -149,25 +165,24 @@ export class DocumentsService {
       });
 
       if (!folder) {
+        console.error('❌ Folder not found!');
         throw new BadRequestException('Pasta não encontrada ou não pertence ao cliente');
       }
+      console.log('✅ Folder validated');
     }
 
-    // Create unique filename
-    const fileExt = path.extname(file.originalname);
-    const timestamp = Date.now();
-    const uniqueFilename = `${uploadDto.clientId}-${timestamp}${fileExt}`;
-    const filePath = path.join('uploads', uniqueFilename);
+    // Generate unique S3 key for the file
+    console.log('🔑 Generating S3 key...');
+    const s3Key = this.storageService.generateFileKey(uploadDto.clientId, file.originalname);
+    console.log('✅ S3 Key generated:', s3Key);
 
-    // Save file to disk
-    const uploadsDir = path.join(process.cwd(), 'uploads');
-    if (!fs.existsSync(uploadsDir)) {
-      fs.mkdirSync(uploadsDir, { recursive: true });
-    }
+    // Upload file to S3
+    console.log('☁️  Uploading file to S3...');
+    await this.storageService.uploadFile(s3Key, file.buffer, file.mimetype);
+    console.log('✅ File uploaded to S3 successfully!');
 
-    fs.writeFileSync(path.join(process.cwd(), filePath), file.buffer);
-
-    // Create document record
+    // Create document record with S3 key as filePath
+    console.log('💾 Creating document record in database...');
     const document = await this.prisma.document.create({
       data: {
         clientId: uploadDto.clientId,
@@ -175,7 +190,7 @@ export class DocumentsService {
         type: uploadDto.type,
         title: uploadDto.title || file.originalname,
         description: uploadDto.description,
-        filePath,
+        filePath: s3Key, // Store S3 key instead of local path
         fileName: file.originalname,
         mimeType: file.mimetype,
         fileSize: file.size,
@@ -212,6 +227,11 @@ export class DocumentsService {
         },
       },
     });
+
+    console.log('✅ Document record created in database');
+    console.log('🆔 Document ID:', document.id);
+    console.log('📁 Stored S3 Path:', document.filePath);
+    console.log('========== DOCUMENT UPLOAD COMPLETED ==========\n');
 
     return document;
   }
@@ -319,16 +339,31 @@ export class DocumentsService {
   }
 
   async getDocumentFile(id: string, accountantId: string) {
+    console.log('\n📥 ========== GET DOCUMENT FILE (ACCOUNTANT) ==========');
+    console.log('🆔 Document ID:', id);
+    console.log('🏢 Accountant ID:', accountantId);
+
     const document = await this.findOne(id, accountantId);
+    console.log('📄 File Name:', document.fileName);
+    console.log('📁 S3 Path:', document.filePath);
 
-    const filePath = path.join(process.cwd(), document.filePath);
-
-    if (!fs.existsSync(filePath)) {
+    // Check if file exists in S3
+    console.log('⏳ Checking if file exists in S3...');
+    const exists = await this.storageService.fileExists(document.filePath);
+    if (!exists) {
+      console.error('❌ File not found in S3!');
       throw new NotFoundException('Arquivo não encontrado');
     }
+    console.log('✅ File exists in S3');
+
+    // Download file from S3
+    console.log('☁️  Downloading file from S3...');
+    const fileStream = await this.storageService.downloadFile(document.filePath);
+    console.log('✅ File stream ready');
+    console.log('========== GET DOCUMENT FILE COMPLETED ==========\n');
 
     return {
-      filePath,
+      fileStream,
       fileName: document.fileName,
       mimeType: document.mimeType,
     };
@@ -340,7 +375,14 @@ export class DocumentsService {
     userId: string,
     clientId: string,
   ) {
+    console.log('\n📨 ========== UPLOAD RESPONSE STARTED ==========');
+    console.log('👤 User ID:', userId);
+    console.log('📂 Client ID:', clientId);
+    console.log('🆔 Request ID:', uploadDto.requestId);
+    console.log('📄 File Name:', file.originalname);
+
     // Verify request exists and belongs to client
+    console.log('⏳ Verifying document request...');
     const request = await this.prisma.documentRequest.findFirst({
       where: {
         id: uploadDto.requestId,
@@ -349,29 +391,29 @@ export class DocumentsService {
     });
 
     if (!request) {
+      console.error('❌ Document request not found!');
       throw new NotFoundException('Solicitação não encontrada');
     }
+    console.log('✅ Request verified');
 
     // Check if request is still pending
     if (request.status !== RequestStatus.PENDING) {
+      console.error('❌ Request already fulfilled!');
       throw new BadRequestException('Esta solicitação já foi atendida');
     }
 
-    // Create unique filename
-    const fileExt = path.extname(file.originalname);
-    const timestamp = Date.now();
-    const uniqueFilename = `${clientId}-${timestamp}${fileExt}`;
-    const filePath = path.join('uploads', uniqueFilename);
+    // Generate unique S3 key for the file
+    console.log('🔑 Generating S3 key...');
+    const s3Key = this.storageService.generateFileKey(clientId, file.originalname);
+    console.log('✅ S3 Key generated:', s3Key);
 
-    // Save file to disk
-    const uploadsDir = path.join(process.cwd(), 'uploads');
-    if (!fs.existsSync(uploadsDir)) {
-      fs.mkdirSync(uploadsDir, { recursive: true });
-    }
+    // Upload file to S3
+    console.log('☁️  Uploading file to S3...');
+    await this.storageService.uploadFile(s3Key, file.buffer, file.mimetype);
+    console.log('✅ File uploaded to S3 successfully!');
 
-    fs.writeFileSync(path.join(process.cwd(), filePath), file.buffer);
-
-    // Create document record linked to request
+    // Create document record linked to request with S3 key as filePath
+    console.log('💾 Creating document record...');
     const document = await this.prisma.document.create({
       data: {
         clientId,
@@ -379,7 +421,7 @@ export class DocumentsService {
         type: request.type as DocumentType,
         title: file.originalname,
         description: uploadDto.notes,
-        filePath,
+        filePath: s3Key, // Store S3 key instead of local path
         fileName: file.originalname,
         mimeType: file.mimetype,
         fileSize: file.size,
@@ -409,6 +451,7 @@ export class DocumentsService {
     });
 
     // Update request status to fulfilled
+    console.log('⏳ Updating request status...');
     await this.prisma.documentRequest.update({
       where: { id: uploadDto.requestId },
       data: {
@@ -416,6 +459,11 @@ export class DocumentsService {
         fulfilledAt: new Date(),
       },
     });
+
+    console.log('✅ Upload response completed!');
+    console.log('🆔 Document ID:', document.id);
+    console.log('📁 S3 Path:', document.filePath);
+    console.log('========== UPLOAD RESPONSE COMPLETED ==========\n');
 
     return document;
   }
@@ -538,16 +586,31 @@ export class DocumentsService {
    * Get document file for a specific client
    */
   async getDocumentFileForClient(id: string, clientId: string) {
+    console.log('\n📥 ========== GET DOCUMENT FILE (CLIENT) ==========');
+    console.log('🆔 Document ID:', id);
+    console.log('👤 Client ID:', clientId);
+
     const document = await this.findOneForClient(id, clientId);
+    console.log('📄 File Name:', document.fileName);
+    console.log('📁 S3 Path:', document.filePath);
 
-    const filePath = path.join(process.cwd(), document.filePath);
-
-    if (!fs.existsSync(filePath)) {
+    // Check if file exists in S3
+    console.log('⏳ Checking if file exists in S3...');
+    const exists = await this.storageService.fileExists(document.filePath);
+    if (!exists) {
+      console.error('❌ File not found in S3!');
       throw new NotFoundException('Arquivo não encontrado');
     }
+    console.log('✅ File exists in S3');
+
+    // Download file from S3
+    console.log('☁️  Downloading file from S3...');
+    const fileStream = await this.storageService.downloadFile(document.filePath);
+    console.log('✅ File stream ready');
+    console.log('========== GET DOCUMENT FILE COMPLETED ==========\n');
 
     return {
-      filePath,
+      fileStream,
       fileName: document.fileName,
       mimeType: document.mimeType,
     };
@@ -690,10 +753,12 @@ export class DocumentsService {
     // Verify document exists and belongs to accountant's client
     const document = await this.findOne(id, accountantId);
 
-    // Delete physical file
-    const filePath = path.join(process.cwd(), document.filePath);
-    if (fs.existsSync(filePath)) {
-      fs.unlinkSync(filePath);
+    // Delete file from S3
+    try {
+      await this.storageService.deleteFile(document.filePath);
+    } catch (error) {
+      // Log error but continue with database deletion
+      console.error('Error deleting file from S3:', error);
     }
 
     // Delete document record
