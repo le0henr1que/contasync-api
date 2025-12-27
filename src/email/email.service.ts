@@ -393,4 +393,182 @@ export class EmailService {
       context: data,
     });
   }
+
+  async sendFeedbackNotification(
+    email: string,
+    data: {
+      accountantName: string;
+      userName: string;
+      userEmail: string;
+      feedbackType: string;
+      feedbackTitle: string;
+      feedbackDescription: string;
+      feedbackRating: string;
+      feedbackId: string;
+    },
+  ): Promise<void> {
+    console.log('\n🎯 Sending FEEDBACK NOTIFICATION email to:', email);
+    await this.sendEmail({
+      to: email,
+      subject: 'Novo Feedback Recebido - ContaSync',
+      template: 'feedback-notification',
+      context: data,
+    });
+  }
+
+  // ============================================
+  // BILLING EMAIL METHODS
+  // ============================================
+
+  async sendBillingCreatedEmail(
+    email: string,
+    data: {
+      clientName: string;
+      accountantName: string;
+      documents: Array<{ type: string; customDescription?: string }>;
+      dueDate: string;
+      notes?: string;
+      billingId: string;
+      portalUrl: string;
+    },
+  ): Promise<void> {
+    console.log('\n🎯 Sending BILLING CREATED email to:', email);
+    await this.sendEmail({
+      to: email,
+      subject: 'Nova Solicitação de Documentos - ContaSync',
+      template: 'billing-created',
+      context: data,
+    });
+  }
+
+  async sendBillingReminderEmail(
+    email: string,
+    data: {
+      clientName: string;
+      accountantName: string;
+      documents: Array<{ type: string; customDescription?: string; uploaded: boolean }>;
+      dueDate: string;
+      daysRemaining: number;
+      billingId: string;
+      portalUrl: string;
+    },
+  ): Promise<void> {
+    console.log('\n🎯 Sending BILLING REMINDER email to:', email);
+    await this.sendEmail({
+      to: email,
+      subject: `Lembrete: Documentos Vencem em ${data.daysRemaining} ${data.daysRemaining === 1 ? 'Dia' : 'Dias'} - ContaSync`,
+      template: 'billing-reminder',
+      context: data,
+    });
+  }
+
+  async sendBillingOverdueEmail(
+    email: string,
+    data: {
+      clientName: string;
+      accountantName: string;
+      documents: Array<{ type: string; customDescription?: string; uploaded: boolean }>;
+      dueDate: string;
+      billingId: string;
+      portalUrl: string;
+    },
+  ): Promise<void> {
+    console.log('\n🎯 Sending BILLING OVERDUE email to:', email);
+    await this.sendEmail({
+      to: email,
+      subject: 'Urgente: Prazo de Documentos Vencido - ContaSync',
+      template: 'billing-overdue',
+      context: data,
+    });
+  }
+
+  async sendDocumentUploadedEmail(
+    email: string,
+    data: {
+      accountantName: string;
+      clientName: string;
+      documentType: string;
+      documentDescription?: string;
+      uploadDate: string;
+      uploadedCount: number;
+      totalCount: number;
+      progress: number;
+      billingId: string;
+      portalUrl: string;
+    },
+  ): Promise<void> {
+    console.log('\n🎯 Sending DOCUMENT UPLOADED email to:', email);
+    await this.sendEmail({
+      to: email,
+      subject: `Novo Documento Recebido de ${data.clientName} - ContaSync`,
+      template: 'document-uploaded',
+      context: data,
+    });
+  }
+
+  async sendDocumentApprovedEmail(
+    email: string,
+    data: {
+      clientName: string;
+      accountantName: string;
+      documentType: string;
+      documentDescription?: string;
+      approvedCount: number;
+      totalCount: number;
+      progress: number;
+      allApproved: boolean;
+      billingId: string;
+      portalUrl: string;
+    },
+  ): Promise<void> {
+    console.log('\n🎯 Sending DOCUMENT APPROVED email to:', email);
+    await this.sendEmail({
+      to: email,
+      subject: 'Documento Aprovado - ContaSync',
+      template: 'document-approved',
+      context: data,
+    });
+  }
+
+  async sendDocumentRejectedEmail(
+    email: string,
+    data: {
+      clientName: string;
+      accountantName: string;
+      documentType: string;
+      documentDescription?: string;
+      rejectionReason: string;
+      billingId: string;
+      portalUrl: string;
+    },
+  ): Promise<void> {
+    console.log('\n🎯 Sending DOCUMENT REJECTED email to:', email);
+    await this.sendEmail({
+      to: email,
+      subject: 'Documento Requer Correção - ContaSync',
+      template: 'document-rejected',
+      context: data,
+    });
+  }
+
+  async sendBillingCompletedEmail(
+    email: string,
+    data: {
+      clientName: string;
+      accountantName: string;
+      documents: Array<{ type: string; customDescription?: string }>;
+      documentCount: number;
+      completionDate: string;
+      billingId: string;
+      portalUrl: string;
+    },
+  ): Promise<void> {
+    console.log('\n🎯 Sending BILLING COMPLETED email to:', email);
+    await this.sendEmail({
+      to: email,
+      subject: 'Cobrança Concluída com Sucesso - ContaSync',
+      template: 'billing-completed',
+      context: data,
+    });
+  }
 }

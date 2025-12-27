@@ -24,6 +24,7 @@ import { CheckoutModule } from './checkout/checkout.module';
 import { LimitsModule } from './limits/limits.module';
 import { DocumentFoldersModule } from './document-folders/document-folders.module';
 import { HealthModule } from './health/health.module';
+import { FeedbackModule } from './feedback/feedback.module';
 
 @Module({
   imports: [
@@ -51,6 +52,7 @@ import { HealthModule } from './health/health.module';
     LimitsModule,
     DocumentFoldersModule,
     HealthModule,
+    FeedbackModule,
   ],
   controllers: [AppController],
   providers: [AppService],

@@ -22,6 +22,7 @@ model User {
   uploadedDocuments   Document[]
   passwordResetTokens PasswordResetToken[]
   refreshTokens       RefreshToken[]
+  feedbacks           Feedback[]
 
   @@map("users")
 }
@@ -408,6 +409,25 @@ model Invitation {
   @@map("invitations")
 }
 
+model Feedback {
+  id        String         @id @default(cuid())
+  userId    String
+  tipo      FeedbackType
+  titulo    String
+  descricao String
+  avaliacao Int?
+  status    FeedbackStatus @default(PENDENTE)
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+  user      User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([status])
+  @@index([tipo])
+  @@index([createdAt])
+  @@map("feedbacks")
+}
+
 enum Role {
   ADMIN
   ACCOUNTANT
@@ -511,4 +531,17 @@ enum InvoiceStatus {
   PAID
   VOID
   UNCOLLECTIBLE
+}
+
+enum FeedbackType {
+  DUVIDA
+  PROBLEMA
+  MELHORIA
+  AVALIACAO
+}
+
+enum FeedbackStatus {
+  PENDENTE
+  EM_ANALISE
+  RESOLVIDO
 }
