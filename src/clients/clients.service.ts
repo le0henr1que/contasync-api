@@ -97,7 +97,8 @@ export class ClientsService {
           cpfCnpj: createClientDto.cpfCnpj,
           phone: createClientDto.phone,
           companyName: createClientDto.companyName,
-          expenseModuleEnabled: createClientDto.expenseModuleEnabled || false,
+          expenseModuleEnabled: createClientDto.expenseModuleEnabled ?? true,  // Enable accounting modules by default
+          financialModuleEnabled: false,  // Disable personal finance module by default
         },
         include: {
           user: {
@@ -170,6 +171,21 @@ export class ClientsService {
             role: true,
             isActive: true,
             createdAt: true,
+          },
+        },
+        subscription: {
+          include: {
+            plan: true,
+          },
+        },
+        accountant: {
+          include: {
+            user: {
+              select: {
+                name: true,
+                email: true,
+              },
+            },
           },
         },
         _count: {

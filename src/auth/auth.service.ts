@@ -39,7 +39,15 @@ export class AuthService {
             },
           },
         },
-        client: true,
+        client: {
+          include: {
+            subscription: {
+              include: {
+                plan: true,
+              },
+            },
+          },
+        },
       },
     });
 
@@ -97,6 +105,31 @@ export class AuthService {
           featuresJson: sub.plan.featuresJson,
         } : null,
       };
+    } else if (user.client?.subscription) {
+      // Build subscription info for individual client
+      const sub = user.client.subscription;
+      subscriptionInfo = {
+        id: sub.id,
+        status: sub.status,
+        interval: sub.interval,
+        currentPeriodStart: sub.currentPeriodStart,
+        currentPeriodEnd: sub.currentPeriodEnd,
+        cancelAtPeriodEnd: sub.cancelAtPeriodEnd,
+        trialEnd: sub.trialEnd,
+        plan: sub.plan ? {
+          id: sub.plan.id,
+          name: sub.plan.name,
+          slug: sub.plan.slug,
+          description: sub.plan.description,
+          tenantType: sub.plan.tenantType,
+          priceMonthly: sub.plan.priceMonthly,
+          priceYearly: sub.plan.priceYearly,
+          stripePriceIdMonthly: sub.plan.stripePriceIdMonthly,
+          stripePriceIdYearly: sub.plan.stripePriceIdYearly,
+          limitsJson: sub.plan.limitsJson,
+          featuresJson: sub.plan.featuresJson,
+        } : null,
+      };
     }
 
     return {
@@ -110,6 +143,7 @@ export class AuthService {
         accountantId: user.accountant?.id,
         clientId: user.client?.id,
         expenseModuleEnabled: user.client?.expenseModuleEnabled ?? false,
+        financialModuleEnabled: user.client?.financialModuleEnabled ?? false,
         subscriptionStatus: user.accountant?.subscriptionStatus,
         trialEndsAt: user.accountant?.trialEndsAt,
         subscription: subscriptionInfo,
@@ -337,12 +371,108 @@ export class AuthService {
         },
       };
     } else {
-      // Create INDIVIDUAL CLIENT (no accountant required for now)
-      // For individual clients, they will need to be invited by an accountant later
-      // For now, we create a standalone user
-      throw new ConflictException(
-        'Cadastro de clientes individuais ainda não implementado. Use o convite do contador.',
-      );
+      // Create INDIVIDUAL CLIENT (standalone, no accountant)
+      if (!signupDto.cpfCnpj) {
+        throw new ConflictException('CPF é obrigatório para clientes individuais');
+      }
+
+      // Check if CPF already exists
+      const existingCpf = await this.prisma.client.findUnique({
+        where: { cpfCnpj: signupDto.cpfCnpj },
+      });
+
+      if (existingCpf) {
+        throw new ConflictException('Este CPF já está cadastrado');
+      }
+
+      const user = await this.prisma.user.create({
+        data: {
+          email: signupDto.email,
+          passwordHash: hashedPassword,
+          name: signupDto.name,
+          role: Role.CLIENT,
+          client: {
+            create: {
+              cpfCnpj: signupDto.cpfCnpj,
+              phone: null,
+              address: null,
+              city: null,
+              state: null,
+              zipCode: null,
+              // Module configuration for individual clients
+              financialModuleEnabled: true,  // Enable personal finance module
+              expenseModuleEnabled: false,   // Disable accounting modules (until linked to accountant)
+              // Individual client has their own subscription
+              subscription: {
+                create: {
+                  planId: selectedPlan.id,
+                  status: SubscriptionStatus.TRIALING,
+                  interval: 'MONTHLY',
+                  currentPeriodStart,
+                  currentPeriodEnd,
+                  trialEnd: trialEndsAt,
+                  cancelAtPeriodEnd: false,
+                },
+              },
+            },
+          },
+        },
+        include: {
+          client: {
+            include: {
+              subscription: true,
+            },
+          },
+        },
+      });
+
+      // Generate access token
+      const payload = {
+        sub: user.id,
+        email: user.email,
+        role: user.role,
+        clientId: user.client?.id,
+      };
+
+      const accessToken = this.jwtService.sign(payload, { expiresIn: '24h' });
+
+      // Create Stripe checkout session for individual client
+      let checkoutUrl: string | undefined;
+      if (selectedPlan.stripePriceIdMonthly || selectedPlan.stripePriceIdYearly) {
+        try {
+          // For individual clients, we'll use the client subscription
+          const checkoutSession = await this.subscriptionsService.createCheckoutSession(
+            user.client!.id,
+            {
+              planId: selectedPlan.id,
+              successUrl: `${process.env.FRONTEND_URL || 'http://localhost:3001'}/client-portal/settings?session_id={CHECKOUT_SESSION_ID}`,
+              cancelUrl: `${process.env.FRONTEND_URL || 'http://localhost:3001'}/client-portal/settings`,
+            },
+          );
+          checkoutUrl = checkoutSession.url;
+        } catch (error) {
+          console.error('Error creating Stripe checkout session for individual client:', error);
+          // Don't fail signup if checkout creation fails
+        }
+      } else {
+        console.log(`⚠️  Stripe checkout skipped - Plan "${selectedPlan.name}" has no Stripe price IDs configured`);
+      }
+
+      // TODO: Send welcome email
+
+      return {
+        accessToken,
+        checkoutUrl,
+        user: {
+          id: user.id,
+          name: user.name,
+          email: user.email,
+          role: user.role,
+          clientId: user.client?.id,
+          expenseModuleEnabled: user.client?.expenseModuleEnabled ?? false,
+          financialModuleEnabled: user.client?.financialModuleEnabled ?? true,
+        },
+      };
     }
   }
 
@@ -390,13 +520,57 @@ export class AuthService {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
       include: {
-        accountant: true,
-        client: true,
+        accountant: {
+          include: {
+            subscription: {
+              include: {
+                plan: true,
+              },
+            },
+          },
+        },
+        client: {
+          include: {
+            subscription: {
+              include: {
+                plan: true,
+              },
+            },
+          },
+        },
       },
     });
 
     if (!user || !user.isActive) {
       throw new UnauthorizedException('Usuário não encontrado');
+    }
+
+    // Build subscription info
+    let subscriptionInfo = null;
+    if (user.accountant?.subscription) {
+      const sub = user.accountant.subscription;
+      subscriptionInfo = {
+        id: sub.id,
+        status: sub.status,
+        interval: sub.interval,
+        currentPeriodStart: sub.currentPeriodStart,
+        currentPeriodEnd: sub.currentPeriodEnd,
+        trialEnd: sub.trialEnd,
+        cancelAtPeriodEnd: sub.cancelAtPeriodEnd,
+        plan: sub.plan,
+      };
+    } else if (user.client?.subscription) {
+      const sub = user.client.subscription;
+      subscriptionInfo = {
+        id: sub.id,
+        status: sub.status,
+        interval: sub.interval,
+        currentPeriodStart: sub.currentPeriodStart,
+        currentPeriodEnd: sub.currentPeriodEnd,
+        trialEnd: sub.trialEnd,
+        cancelAtPeriodEnd: sub.cancelAtPeriodEnd,
+        plan: sub.plan,
+      };
     }
 
     return {
@@ -409,7 +583,11 @@ export class AuthService {
       accountantId: user.accountant?.id,
       clientId: user.client?.id,
       expenseModuleEnabled: user.client?.expenseModuleEnabled ?? false,
+      financialModuleEnabled: user.client?.financialModuleEnabled ?? false,
       onboardingCompleted: user.accountant?.onboardingCompleted ?? true,
+      subscription: subscriptionInfo,
+      // Indicate whether this is an individual client (has own subscription)
+      isIndividualClient: user.client && !user.client.accountantId,
     };
   }
 

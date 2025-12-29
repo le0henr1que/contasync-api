@@ -267,6 +267,11 @@ export class PaymentsService {
       }
 
       // Security check: verify client belongs to logged-in accountant
+      // Individual clients (without accountant) can't be used by accountants
+      if (!client.accountantId) {
+        throw new ForbiddenException('Este cliente não pertence a nenhum contador');
+      }
+
       if (client.accountantId !== accountantId) {
         throw new ForbiddenException('Cliente não pertence a este contador');
       }
@@ -726,7 +731,7 @@ export class PaymentsService {
             const newPayment = await this.prisma.payment.create({
               data: {
                 clientId: payment.clientId,
-                accountantId: payment.client.accountantId,
+                accountantId: payment.client.accountantId || undefined, // May be null for individual clients
                 paymentType: payment.paymentType,
                 title: payment.title,
                 amount: payment.amount,

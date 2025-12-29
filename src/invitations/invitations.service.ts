@@ -181,12 +181,14 @@ export class InvitationsService {
         },
       });
 
-      // Create client
+      // Create client with accounting modules enabled
       const client = await prisma.client.create({
         data: {
           userId: user.id,
           accountantId: invitation.accountantId,
           cpfCnpj: userCpfCnpj,
+          expenseModuleEnabled: true,     // Enable accounting modules (managed by accountant)
+          financialModuleEnabled: false,  // Disable personal finance module by default
         },
       });
 

@@ -51,6 +51,7 @@ model Accountant {
   subscriptionStatus   SubscriptionStatus @default(TRIALING)
   subscriptionPlan     String?
   trialEndsAt          DateTime?
+  trialExtended        Boolean            @default(false)
   onboardingCompleted  Boolean            @default(false)
   createdAt            DateTime           @default(now())
   updatedAt            DateTime           @updatedAt
@@ -66,18 +67,26 @@ model Accountant {
 }
 
 model Client {
-  id                   String            @id @default(cuid())
-  userId               String            @unique
-  accountantId         String
-  companyName          String?
-  cpfCnpj              String            @unique
-  phone                String?
-  expenseModuleEnabled Boolean           @default(false)
-  deletedAt            DateTime?
-  createdAt            DateTime          @default(now())
-  updatedAt            DateTime          @updatedAt
+  id                      String            @id @default(cuid())
+  userId                  String            @unique
+  accountantId            String?           // Optional for standalone individual clients
+  companyName             String?
+  cpfCnpj                 String            @unique
+  phone                   String?
+  address                 String?
+  city                    String?
+  state                   String?
+  zipCode                 String?
+
+  // Module enablement flags
+  expenseModuleEnabled    Boolean           @default(false)  // Accounting modules (for clients with accountant)
+  financialModuleEnabled  Boolean           @default(false)  // Personal finance module (for individual clients)
+
+  deletedAt               DateTime?
+  createdAt               DateTime          @default(now())
+  updatedAt               DateTime          @updatedAt
   activityLogs         ActivityLog[]
-  accountant           Accountant        @relation(fields: [accountantId], references: [id], onDelete: Cascade)
+  accountant           Accountant?       @relation(fields: [accountantId], references: [id], onDelete: Cascade)
   user                 User              @relation(fields: [userId], references: [id], onDelete: Cascade)
   documentFolders      DocumentFolder[]
   requests             DocumentRequest[]
@@ -85,6 +94,15 @@ model Client {
   expenses             Expense[]
   notifications        Notification[]
   payments             Payment[]
+  subscription         Subscription?     // Individual clients can have their own subscription
+
+  // Financial Module Relations
+  financialTransactions FinancialTransaction[]
+  recurringPayments     RecurringPayment[]
+  installments          Installment[]
+  investments           Investment[]
+  financialGoals        FinancialGoal[]
+  aiInsights            AIInsight[]
 
   @@index([accountantId])
   @@index([cpfCnpj])
@@ -319,7 +337,8 @@ model Plan {
 
 model Subscription {
   id                   String             @id @default(cuid())
-  accountantId         String             @unique
+  accountantId         String?            @unique // For accountant firms
+  clientId             String?            @unique // For individual clients
   planId               String
   status               SubscriptionStatus @default(TRIALING)
   interval             BillingInterval    @default(MONTHLY)
@@ -334,11 +353,13 @@ model Subscription {
   createdAt            DateTime           @default(now())
   updatedAt            DateTime           @updatedAt
   invoices             Invoice[]
-  accountant           Accountant         @relation(fields: [accountantId], references: [id], onDelete: Cascade)
+  accountant           Accountant?        @relation(fields: [accountantId], references: [id], onDelete: Cascade)
+  client               Client?            @relation(fields: [clientId], references: [id], onDelete: Cascade)
   plan                 Plan               @relation(fields: [planId], references: [id])
   usageRecords         UsageRecord[]
 
   @@index([accountantId])
+  @@index([clientId])
   @@index([planId])
   @@index([status])
   @@index([stripeSubscriptionId])
@@ -544,4 +565,411 @@ enum FeedbackStatus {
   PENDENTE
   EM_ANALISE
   RESOLVIDO
+}
+
+// ============================================
+// FINANCIAL MODULE ENUMS
+// ============================================
+
+enum TransactionType {
+  INCOME
+  EXPENSE
+}
+
+enum TransactionCategory {
+  // Income categories
+  SALARY
+  FREELANCE
+  INVESTMENT_RETURN
+  GIFT
+  OTHER_INCOME
+
+  // Expense categories
+  FOOD
+  TRANSPORT
+  HEALTH
+  EDUCATION
+  HOUSING
+  UTILITIES
+  ENTERTAINMENT
+  SHOPPING
+  SUBSCRIPTION
+  INSURANCE
+  INVESTMENT
+  FURNITURE
+  EQUIPMENT
+  OTHER_EXPENSE
+}
+
+enum TransactionSource {
+  MANUAL
+  RECURRING
+  INSTALLMENT
+  INVESTMENT
+}
+
+enum InstallmentStatus {
+  ACTIVE
+  COMPLETED
+  CANCELED
+}
+
+enum InstallmentPaymentStatus {
+  PENDING
+  PAID
+  OVERDUE
+  SKIPPED
+}
+
+enum InvestmentType {
+  STOCK
+  FUND
+  FIXED_INCOME
+  CRYPTO
+  REAL_ESTATE
+  SAVINGS_BOX
+  OTHER
+}
+
+enum InvestmentTransactionType {
+  DEPOSIT
+  WITHDRAWAL
+  DIVIDEND
+  INTEREST
+  PROFIT
+  LOSS
+}
+
+enum GoalPriority {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum GoalViability {
+  VIABLE
+  CHALLENGING
+  IMPOSSIBLE
+}
+
+enum GoalStatus {
+  ACTIVE
+  COMPLETED
+  CANCELED
+  PAUSED
+}
+
+enum AIInsightType {
+  SPENDING_ALERT
+  SAVING_OPPORTUNITY
+  GOAL_SUGGESTION
+  RECURRING_OPTIMIZATION
+  CATEGORY_ANALYSIS
+  INVESTMENT_SUGGESTION
+  BUDGET_WARNING
+}
+
+enum InsightPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+// ============================================
+// FINANCIAL MODULE MODELS
+// ============================================
+
+model FinancialTransaction {
+  id                    String                    @id @default(cuid())
+  clientId              String
+  type                  TransactionType
+  category              TransactionCategory
+  description           String
+  amount                Decimal                   @db.Decimal(10, 2)
+  date                  DateTime
+  paymentMethod         PaymentMethod?
+  isFixed               Boolean                   @default(false)
+  notes                 String?
+  receiptPath           String?
+  fileName              String?
+  mimeType              String?
+  fileSize              Int?
+
+  // Source tracking
+  sourceType            TransactionSource?
+  sourceId              String?
+
+  // Metadata
+  metadata              Json?
+  createdAt             DateTime                  @default(now())
+  updatedAt             DateTime                  @updatedAt
+  deletedAt             DateTime?
+
+  // Relations
+  client                Client                    @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@index([clientId])
+  @@index([type])
+  @@index([category])
+  @@index([date])
+  @@index([sourceType, sourceId])
+  @@map("financial_transactions")
+}
+
+model RecurringPayment {
+  id                    String                    @id @default(cuid())
+  clientId              String
+  title                 String
+  description           String?
+  amount                Decimal                   @db.Decimal(10, 2)
+  category              TransactionCategory
+  frequency             RecurringFrequency
+  dayOfMonth            Int
+  startDate             DateTime
+  endDate               DateTime?
+  isActive              Boolean                   @default(true)
+  lastProcessedDate     DateTime?
+  nextDueDate           DateTime
+
+  // Metadata
+  metadata              Json?
+  createdAt             DateTime                  @default(now())
+  updatedAt             DateTime                  @updatedAt
+
+  // Relations
+  client                Client                    @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@index([clientId])
+  @@index([isActive])
+  @@index([nextDueDate])
+  @@map("recurring_payments")
+}
+
+model Installment {
+  id                    String                    @id @default(cuid())
+  clientId              String
+  title                 String
+  description           String?
+  totalAmount           Decimal                   @db.Decimal(10, 2)
+  installmentCount      Int
+  installmentAmount     Decimal                   @db.Decimal(10, 2)
+  category              TransactionCategory
+  firstDueDate          DateTime
+
+  // Status tracking
+  paidCount             Int                       @default(0)
+  status                InstallmentStatus         @default(ACTIVE)
+
+  // Metadata
+  metadata              Json?
+  createdAt             DateTime                  @default(now())
+  updatedAt             DateTime                  @updatedAt
+
+  // Relations
+  client                Client                    @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  payments              InstallmentPayment[]
+
+  @@index([clientId])
+  @@index([status])
+  @@map("installments")
+}
+
+model InstallmentPayment {
+  id                    String                    @id @default(cuid())
+  installmentId         String
+  installmentNumber     Int
+  amount                Decimal                   @db.Decimal(10, 2)
+  dueDate               DateTime
+  paidDate              DateTime?
+  status                InstallmentPaymentStatus  @default(PENDING)
+
+  // Transaction reference
+  transactionId         String?
+
+  // Receipt
+  receiptPath           String?
+  fileName              String?
+  mimeType              String?
+  fileSize              Int?
+
+  createdAt             DateTime                  @default(now())
+  updatedAt             DateTime                  @updatedAt
+
+  // Relations
+  installment           Installment               @relation(fields: [installmentId], references: [id], onDelete: Cascade)
+
+  @@index([installmentId])
+  @@index([status])
+  @@index([dueDate])
+  @@map("installment_payments")
+}
+
+model Investment {
+  id                    String                    @id @default(cuid())
+  clientId              String
+  type                  InvestmentType
+  name                  String
+  description           String?
+  ticker                String?
+
+  // Amounts
+  totalInvested         Decimal                   @db.Decimal(10, 2) @default(0)
+  currentValue          Decimal                   @db.Decimal(10, 2) @default(0)
+  currentQuantity       Decimal                   @db.Decimal(10, 4) @default(0)
+  averagePrice          Decimal                   @db.Decimal(10, 2) @default(0)
+
+  // Metadata
+  metadata              Json?
+  deletedAt             DateTime?
+  createdAt             DateTime                  @default(now())
+  updatedAt             DateTime                  @updatedAt
+
+  // Relations
+  client                Client                    @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  transactions          InvestmentTransaction[]
+
+  @@index([clientId])
+  @@index([type])
+  @@map("investments")
+}
+
+model InvestmentTransaction {
+  id                    String                    @id @default(cuid())
+  investmentId          String
+  type                  InvestmentTransactionType
+  amount                Decimal                   @db.Decimal(10, 2)
+  date                  DateTime
+  description           String?
+
+  // For returns/dividends - creates income transaction
+  createdTransactionId  String?
+
+  createdAt             DateTime                  @default(now())
+  updatedAt             DateTime                  @updatedAt
+
+  // Relations
+  investment            Investment                @relation(fields: [investmentId], references: [id], onDelete: Cascade)
+
+  @@index([investmentId])
+  @@index([type])
+  @@index([date])
+  @@map("investment_transactions")
+}
+
+model FinancialGoal {
+  id                    String                    @id @default(cuid())
+  clientId              String
+  title                 String
+  description           String?
+  targetAmount          Decimal                   @db.Decimal(10, 2)
+  currentAmount         Decimal                   @db.Decimal(10, 2) @default(0)
+  targetDate            DateTime
+  priority              GoalPriority              @default(MEDIUM)
+  category              GoalCategory?
+
+  // AI Analysis
+  monthlyRequired       Decimal?                  @db.Decimal(10, 2)
+  monthlyContribution   Decimal?                  @db.Decimal(10, 2)
+  viability             GoalViability?
+  aiSuggestions         String?
+  lastAIAnalysis        DateTime?
+
+  status                GoalStatus                @default(ACTIVE)
+  completedAt           DateTime?
+  notes                 String?
+
+  createdAt             DateTime                  @default(now())
+  updatedAt             DateTime                  @updatedAt
+
+  // Relations
+  client                Client                    @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  items                 GoalItem[]
+  contributions         GoalContribution[]
+
+  @@index([clientId])
+  @@index([status])
+  @@index([priority])
+  @@map("financial_goals")
+}
+
+model GoalItem {
+  id                    String                    @id @default(cuid())
+  goalId                String
+  title                 String
+  description           String?
+  amount                Decimal                   @default(0) @db.Decimal(10, 2)
+  isPurchased           Boolean                   @default(false)
+  purchasedAt           DateTime?
+  order                 Int                       @default(0)
+  createdAt             DateTime                  @default(now())
+  updatedAt             DateTime                  @updatedAt
+
+  // Relations
+  goal                  FinancialGoal             @relation(fields: [goalId], references: [id], onDelete: Cascade)
+
+  @@index([goalId])
+  @@index([isPurchased])
+  @@map("goal_items")
+}
+
+model GoalContribution {
+  id                    String                    @id @default(cuid())
+  goalId                String
+  amount                Decimal                   @db.Decimal(10, 2)
+  date                  DateTime                  @default(now())
+  notes                 String?
+  createdAt             DateTime                  @default(now())
+
+  // Relations
+  goal                  FinancialGoal             @relation(fields: [goalId], references: [id], onDelete: Cascade)
+
+  @@index([goalId])
+  @@index([date])
+  @@map("goal_contributions")
+}
+
+enum GoalCategory {
+  EMERGENCY_FUND
+  RETIREMENT
+  VACATION
+  HOUSE
+  CAR
+  EDUCATION
+  WEDDING
+  BUSINESS
+  DEBT_PAYMENT
+  OTHER
+}
+
+model AIInsight {
+  id                    String                    @id @default(cuid())
+  clientId              String
+  type                  AIInsightType
+  title                 String
+  content               String
+  priority              InsightPriority           @default(MEDIUM)
+  category              String?
+
+  // Actions
+  isRead                Boolean                   @default(false)
+  isDismissed           Boolean                   @default(false)
+  readAt                DateTime?
+
+  // Context
+  metadata              Json?
+  validUntil            DateTime?
+
+  createdAt             DateTime                  @default(now())
+  updatedAt             DateTime                  @updatedAt
+
+  // Relations
+  client                Client                    @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@index([clientId])
+  @@index([isRead])
+  @@index([type])
+  @@index([priority])
+  @@map("ai_insights")
 }

@@ -99,7 +99,7 @@ export class DocumentsController {
 
     const userId = req.user.id;
     const client = await this.documentsService.getClientByUserId(userId);
-    const accountantId = client.accountantId;
+    const accountantId = client.accountantId || undefined; // May be undefined for individual clients
 
     // Override clientId with the authenticated client's ID
     uploadDto.clientId = client.id;

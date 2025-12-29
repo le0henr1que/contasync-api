@@ -291,6 +291,30 @@ export class EmailService {
     });
   }
 
+  async sendTrialExpiring7Days(
+    email: string,
+    data: {
+      accountantName: string;
+      companyName: string;
+      trialEndDate: string;
+      daysRemaining: number;
+      usage: {
+        clientsCount: number;
+        documentsCount: number;
+        paymentsCount: number;
+      };
+      plansUrl: string;
+    },
+  ): Promise<void> {
+    console.log('\n🎯 Sending TRIAL EXPIRING 7 DAYS email to:', email);
+    await this.sendEmail({
+      to: email,
+      subject: 'Seu trial termina em 7 dias - ContaSync',
+      template: 'trial-expiring-7-days',
+      context: data,
+    });
+  }
+
   async sendTrialExpiring4Days(
     email: string,
     data: {
@@ -311,6 +335,30 @@ export class EmailService {
       to: email,
       subject: 'Seu trial termina em 4 dias - ContaSync',
       template: 'trial-expiring-4-days',
+      context: data,
+    });
+  }
+
+  async sendTrialExpiring3Days(
+    email: string,
+    data: {
+      accountantName: string;
+      companyName: string;
+      trialEndDate: string;
+      daysRemaining: number;
+      usage: {
+        clientsCount: number;
+        documentsCount: number;
+        paymentsCount: number;
+      };
+      plansUrl: string;
+    },
+  ): Promise<void> {
+    console.log('\n🎯 Sending TRIAL EXPIRING 3 DAYS email to:', email);
+    await this.sendEmail({
+      to: email,
+      subject: 'Seu trial termina em 3 dias - ContaSync',
+      template: 'trial-expiring-3-days',
       context: data,
     });
   }

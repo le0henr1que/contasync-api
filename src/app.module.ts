@@ -25,6 +25,9 @@ import { LimitsModule } from './limits/limits.module';
 import { DocumentFoldersModule } from './document-folders/document-folders.module';
 import { HealthModule } from './health/health.module';
 import { FeedbackModule } from './feedback/feedback.module';
+// import { FinancialModule } from './financial/financial.module'; // Temporarily disabled - fixing schema issues
+import { CommonModule } from './common/common.module';
+import { FinancialModule } from './financial/financial.module';
 
 @Module({
   imports: [
@@ -33,6 +36,7 @@ import { FeedbackModule } from './feedback/feedback.module';
     }),
     ScheduleModule.forRoot(),
     PrismaModule,
+    CommonModule,
     StripeModule,
     WebhooksModule,
     AuthModule,
@@ -53,6 +57,8 @@ import { FeedbackModule } from './feedback/feedback.module';
     DocumentFoldersModule,
     HealthModule,
     FeedbackModule,
+    FinancialModule,
+    // FinancialModule, // Temporarily disabled - fixing schema issues
   ],
   controllers: [AppController],
   providers: [AppService],
