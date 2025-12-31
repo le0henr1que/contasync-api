@@ -1611,10 +1611,10 @@ export class FinancialService {
     }
 
     // Add calculated fields
-    const totalInvested = Number(investment.totalInvested);
+    const investedAmount = Number(investment.totalInvested);
     const currentValue = Number(investment.currentValue);
-    const profitLoss = currentValue - totalInvested;
-    const profitLossPercentage = totalInvested > 0 ? (profitLoss / totalInvested) * 100 : 0;
+    const profitLoss = currentValue - investedAmount;
+    const profitLossPercentage = investedAmount > 0 ? (profitLoss / investedAmount) * 100 : 0;
 
     return {
       ...investment,
