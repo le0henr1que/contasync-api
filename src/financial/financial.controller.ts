@@ -3,6 +3,10 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { FinancialService } from './financial.service';
 import { RecurringPaymentsCronService } from './cron/recurring-payments.cron';
+import { CreateDistributionCategoryDto } from './dto/create-distribution-category.dto';
+import { UpdateDistributionCategoryDto } from './dto/update-distribution-category.dto';
+import { UpdateDistributionConfigDto } from './dto/update-distribution-config.dto';
+import { SimulateDistributionDto } from './dto/simulate-distribution.dto';
 
 @Controller('financial')
 @UseGuards(JwtAuthGuard)
@@ -630,6 +634,97 @@ export class FinancialController {
   @Patch('ai-insights/:id/dismiss')
   async dismissInsight(@Param('id') id: string) {
     return this.financialService.dismissInsight(id);
+  }
+
+  // ========== INCOME DISTRIBUTION ==========
+  @Get('distribution/config')
+  async getDistributionConfig(@Request() req) {
+    const clientId = req.user.clientId;
+
+    if (!clientId) {
+      throw new Error('Only client users can access income distribution');
+    }
+
+    return this.financialService.getDistributionConfig(clientId);
+  }
+
+  @Patch('distribution/config')
+  async updateDistributionConfig(@Request() req, @Body() dto: UpdateDistributionConfigDto) {
+    const clientId = req.user.clientId;
+
+    if (!clientId) {
+      throw new Error('Only client users can update income distribution');
+    }
+
+    return this.financialService.updateDistributionConfig(clientId, dto);
+  }
+
+  @Post('distribution/simulate')
+  async simulateDistribution(@Request() req, @Body() dto: SimulateDistributionDto) {
+    const clientId = req.user.clientId;
+
+    if (!clientId) {
+      throw new Error('Only client users can simulate income distribution');
+    }
+
+    return this.financialService.simulateDistribution(clientId, dto.incomeAmount);
+  }
+
+  @Get('distribution/expenses/monthly')
+  async getMonthlyExpenses(@Request() req) {
+    const clientId = req.user.clientId;
+
+    if (!clientId) {
+      throw new Error('Only client users can access monthly expenses');
+    }
+
+    const monthlyExpenses = await this.financialService.calculateMonthlyExpenses(clientId);
+
+    return {
+      monthlyExpenses,
+      message: 'Estimated monthly fixed expenses based on recurring payments',
+    };
+  }
+
+  @Post('distribution/categories')
+  async addDistributionCategory(@Request() req, @Body() dto: CreateDistributionCategoryDto) {
+    const clientId = req.user.clientId;
+
+    if (!clientId) {
+      throw new BadRequestException('Only client users can add distribution categories');
+    }
+
+    try {
+      return await this.financialService.addDistributionCategory(clientId, dto);
+    } catch (error) {
+      throw new BadRequestException(error.message || 'Failed to add distribution category');
+    }
+  }
+
+  @Patch('distribution/categories/:id')
+  async updateDistributionCategory(
+    @Request() req,
+    @Param('id') id: string,
+    @Body() dto: UpdateDistributionCategoryDto,
+  ) {
+    const clientId = req.user.clientId;
+
+    if (!clientId) {
+      throw new Error('Only client users can update distribution categories');
+    }
+
+    return this.financialService.updateDistributionCategory(id, clientId, dto);
+  }
+
+  @Delete('distribution/categories/:id')
+  async deleteDistributionCategory(@Request() req, @Param('id') id: string) {
+    const clientId = req.user.clientId;
+
+    if (!clientId) {
+      throw new Error('Only client users can delete distribution categories');
+    }
+
+    return this.financialService.deleteDistributionCategory(id, clientId);
   }
 
   // ========== CRON TRIGGERS (FOR TESTING) ==========

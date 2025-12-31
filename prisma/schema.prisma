@@ -103,6 +103,7 @@ model Client {
   investments           Investment[]
   financialGoals        FinancialGoal[]
   aiInsights            AIInsight[]
+  incomeDistribution    IncomeDistributionConfig?
 
   @@index([accountantId])
   @@index([cpfCnpj])
@@ -972,4 +973,56 @@ model AIInsight {
   @@index([type])
   @@index([priority])
   @@map("ai_insights")
+}
+
+// ==========================================
+// INCOME DISTRIBUTION MODELS
+// ==========================================
+
+model IncomeDistributionConfig {
+  id                    String                      @id @default(cuid())
+  clientId              String                      @unique
+  
+  // Auto-calculated monthly expenses
+  isAutoCalculateExpenses Boolean                   @default(true)
+  
+  // Settings
+  isActive              Boolean                     @default(true)
+  
+  createdAt             DateTime                    @default(now())
+  updatedAt             DateTime                    @updatedAt
+  
+  // Relations
+  client                Client                      @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  categories            IncomeDistributionCategory[]
+  
+  @@index([clientId])
+  @@map("income_distribution_configs")
+}
+
+model IncomeDistributionCategory {
+  id                    String                      @id @default(cuid())
+  configId              String
+  
+  // Category details
+  name                  String                      // e.g., "Previdência Privada", "Fundo Emergencial", "Lazer"
+  percentage            Float                       // Percentage to allocate (0-100)
+  color                 String?                     // Color for UI
+  icon                  String?                     // Icon name for UI
+  
+  // Priority (1 = highest priority)
+  priority              Int                         @default(999)
+  
+  // Status
+  isActive              Boolean                     @default(true)
+  
+  createdAt             DateTime                    @default(now())
+  updatedAt             DateTime                    @updatedAt
+  
+  // Relations
+  config                IncomeDistributionConfig    @relation(fields: [configId], references: [id], onDelete: Cascade)
+  
+  @@index([configId])
+  @@index([priority])
+  @@map("income_distribution_categories")
 }

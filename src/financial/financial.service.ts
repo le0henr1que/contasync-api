@@ -851,7 +851,79 @@ export class FinancialService {
       data: transactionData,
     });
 
-    return transaction;
+    // Automatic income distribution for SALARY
+    let distributionResult = null;
+    if (type === 'INCOME' && category === 'SALARY') {
+      try {
+        // Get distribution config
+        const config = await this.getDistributionConfig(clientId);
+
+        // Only distribute if config is active and has categories
+        if (config.isActive && config.categories.length > 0) {
+          // Calculate monthly fixed expenses
+          let fixedExpenses = 0;
+          if (config.isAutoCalculateExpenses) {
+            fixedExpenses = await this.calculateMonthlyExpenses(clientId);
+          }
+
+          const availableAmount = Number(amount) - fixedExpenses;
+
+          // Only distribute if there's available amount after expenses
+          if (availableAmount > 0) {
+            // Create distribution transactions for each category
+            const distributions = [];
+            for (const cat of config.categories) {
+              if (!cat.isActive) continue;
+
+              const distributionAmount =
+                (Number(cat.percentage) / 100) * availableAmount;
+
+              // Create a transaction for this distribution
+              const distTransaction = await this.prisma.financialTransaction.create({
+                data: {
+                  clientId,
+                  type: 'EXPENSE', // Distribution is treated as an expense/allocation
+                  category: 'INVESTMENT', // Use INVESTMENT category for all distributions
+                  amount: Math.round(distributionAmount * 100) / 100,
+                  description: `Distribuição automática: ${cat.name} (${cat.percentage}% do salário)`,
+                  date: transactionData.date,
+                  isFixed: false,
+                  notes: `Auto-distribuído do salário ID: ${transaction.id}. Categoria: ${cat.name}`,
+                },
+              });
+
+              distributions.push({
+                categoryId: cat.id,
+                categoryName: cat.name,
+                percentage: Number(cat.percentage),
+                amount: Math.round(distributionAmount * 100) / 100,
+                transactionId: distTransaction.id,
+                color: cat.color,
+                icon: cat.icon,
+              });
+            }
+
+            distributionResult = {
+              incomeAmount: Number(amount),
+              fixedExpenses,
+              availableAmount,
+              totalDistributed: distributions.reduce((sum, d) => sum + d.amount, 0),
+              distributions,
+              message: 'Income automatically distributed according to your configuration',
+            };
+          }
+        }
+      } catch (error) {
+        console.error('Error during automatic distribution:', error);
+        // Don't fail the transaction creation if distribution fails
+        // Just log the error and continue
+      }
+    }
+
+    return {
+      transaction,
+      distribution: distributionResult,
+    };
   }
 
   async updateTransaction(id: string, clientId: string, data: any) {
@@ -2357,6 +2429,295 @@ export class FinancialService {
     });
 
     return { success: true, message: 'Item deleted successfully' };
+  }
+
+  // ========== INCOME DISTRIBUTION ==========
+  async getDistributionConfig(clientId: string) {
+    let config = await this.prisma.incomeDistributionConfig.findUnique({
+      where: { clientId },
+      include: {
+        categories: {
+          where: { isActive: true },
+          orderBy: { priority: 'asc' },
+        },
+      },
+    });
+
+    // Create default config if doesn't exist
+    if (!config) {
+      config = await this.prisma.incomeDistributionConfig.create({
+        data: {
+          clientId,
+          isAutoCalculateExpenses: true,
+          isActive: true,
+        },
+        include: {
+          categories: true,
+        },
+      });
+    }
+
+    return config;
+  }
+
+  async calculateMonthlyExpenses(clientId: string): Promise<number> {
+    const recurringPayments = await this.prisma.recurringPayment.findMany({
+      where: {
+        clientId,
+        isActive: true,
+      },
+    });
+
+    const monthlyTotal = recurringPayments.reduce((sum, payment) => {
+      const amount = Number(payment.amount);
+
+      switch (payment.frequency) {
+        case 'MONTHLY':
+          return sum + amount;
+        case 'QUARTERLY':
+          return sum + (amount / 3);
+        case 'SEMIANNUAL':
+          return sum + (amount / 6);
+        case 'YEARLY':
+          return sum + (amount / 12);
+        default:
+          return sum;
+      }
+    }, 0);
+
+    return monthlyTotal;
+  }
+
+  async simulateDistribution(clientId: string, incomeAmount: number) {
+    const config = await this.getDistributionConfig(clientId);
+
+    if (!config.isActive) {
+      throw new Error('Income distribution is not active for this client');
+    }
+
+    // Calculate monthly expenses
+    let fixedExpenses = 0;
+    if (config.isAutoCalculateExpenses) {
+      fixedExpenses = await this.calculateMonthlyExpenses(clientId);
+    }
+
+    const availableAmount = incomeAmount - fixedExpenses;
+
+    if (availableAmount < 0) {
+      throw new Error('Income is not enough to cover fixed expenses');
+    }
+
+    // Calculate distribution based on categories
+    const distribution = config.categories.map(category => {
+      const amount = (Number(category.percentage) / 100) * availableAmount;
+
+      return {
+        categoryId: category.id,
+        categoryName: category.name,
+        percentage: Number(category.percentage),
+        amount: Math.round(amount * 100) / 100, // Round to 2 decimals
+        color: category.color,
+        icon: category.icon,
+        priority: category.priority,
+      };
+    });
+
+    const totalPercentage = config.categories.reduce(
+      (sum, cat) => sum + Number(cat.percentage),
+      0
+    );
+
+    const totalDistributed = distribution.reduce(
+      (sum, dist) => sum + dist.amount,
+      0
+    );
+
+    return {
+      incomeAmount,
+      fixedExpenses,
+      availableAmount,
+      totalPercentage,
+      totalDistributed,
+      remaining: availableAmount - totalDistributed,
+      distribution,
+    };
+  }
+
+  async updateDistributionConfig(clientId: string, data: any) {
+    const { isAutoCalculateExpenses, isActive } = data;
+
+    const config = await this.getDistributionConfig(clientId);
+
+    const updateData: any = {};
+
+    if (isAutoCalculateExpenses !== undefined) {
+      updateData.isAutoCalculateExpenses = isAutoCalculateExpenses;
+    }
+
+    if (isActive !== undefined) {
+      updateData.isActive = isActive;
+    }
+
+    if (Object.keys(updateData).length === 0) {
+      return config;
+    }
+
+    const updated = await this.prisma.incomeDistributionConfig.update({
+      where: { id: config.id },
+      data: updateData,
+      include: {
+        categories: {
+          where: { isActive: true },
+          orderBy: { priority: 'asc' },
+        },
+      },
+    });
+
+    return updated;
+  }
+
+  async addDistributionCategory(clientId: string, data: any) {
+    const { name, percentage, color, icon, priority, isActive } = data;
+
+    if (!name) {
+      throw new Error('Category name is required');
+    }
+
+    if (percentage === undefined || percentage < 0 || percentage > 100) {
+      throw new Error('Percentage must be between 0 and 100');
+    }
+
+    const config = await this.getDistributionConfig(clientId);
+
+    // Check if total percentage would exceed 100%
+    const currentTotal = await this.prisma.incomeDistributionCategory.aggregate({
+      where: {
+        configId: config.id,
+        isActive: true,
+      },
+      _sum: {
+        percentage: true,
+      },
+    });
+
+    const currentPercentage = Number(currentTotal._sum.percentage) || 0;
+    const newTotal = currentPercentage + Number(percentage);
+
+    if (newTotal > 100) {
+      throw new Error(
+        `Total percentage would exceed 100%. Current: ${currentPercentage}%, Adding: ${percentage}%, Total: ${newTotal}%`
+      );
+    }
+
+    const category = await this.prisma.incomeDistributionCategory.create({
+      data: {
+        configId: config.id,
+        name: name.trim(),
+        percentage: Number(percentage),
+        color: color || null,
+        icon: icon || null,
+        priority: priority !== undefined ? Number(priority) : 999,
+        isActive: isActive !== undefined ? isActive : true,
+      },
+    });
+
+    return category;
+  }
+
+  async updateDistributionCategory(categoryId: string, clientId: string, data: any) {
+    // Verify category belongs to client
+    const category = await this.prisma.incomeDistributionCategory.findFirst({
+      where: {
+        id: categoryId,
+        config: {
+          clientId,
+        },
+      },
+    });
+
+    if (!category) {
+      throw new Error('Category not found');
+    }
+
+    const { name, percentage, color, icon, priority, isActive } = data;
+
+    const updateData: any = {};
+
+    if (name !== undefined) {
+      updateData.name = name.trim();
+    }
+
+    if (percentage !== undefined) {
+      if (percentage < 0 || percentage > 100) {
+        throw new Error('Percentage must be between 0 and 100');
+      }
+
+      // Check if total percentage would exceed 100%
+      const config = await this.prisma.incomeDistributionConfig.findUnique({
+        where: { id: category.configId },
+        include: {
+          categories: {
+            where: {
+              isActive: true,
+              id: { not: categoryId },
+            },
+          },
+        },
+      });
+
+      const otherCategoriesTotal = config.categories.reduce(
+        (sum, cat) => sum + Number(cat.percentage),
+        0
+      );
+
+      const newTotal = otherCategoriesTotal + Number(percentage);
+
+      if (newTotal > 100) {
+        throw new Error(
+          `Total percentage would exceed 100%. Other categories: ${otherCategoriesTotal}%, New percentage: ${percentage}%, Total: ${newTotal}%`
+        );
+      }
+
+      updateData.percentage = Number(percentage);
+    }
+
+    if (color !== undefined) updateData.color = color;
+    if (icon !== undefined) updateData.icon = icon;
+    if (priority !== undefined) updateData.priority = Number(priority);
+    if (isActive !== undefined) updateData.isActive = isActive;
+
+    if (Object.keys(updateData).length === 0) {
+      return category;
+    }
+
+    const updated = await this.prisma.incomeDistributionCategory.update({
+      where: { id: categoryId },
+      data: updateData,
+    });
+
+    return updated;
+  }
+
+  async deleteDistributionCategory(categoryId: string, clientId: string) {
+    // Verify category belongs to client
+    const category = await this.prisma.incomeDistributionCategory.findFirst({
+      where: {
+        id: categoryId,
+        config: {
+          clientId,
+        },
+      },
+    });
+
+    if (!category) {
+      throw new Error('Category not found');
+    }
+
+    await this.prisma.incomeDistributionCategory.delete({
+      where: { id: categoryId },
+    });
+
+    return { success: true, message: 'Category deleted successfully' };
   }
 
   // ========== AI INSIGHTS ==========
