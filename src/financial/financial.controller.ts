@@ -678,12 +678,24 @@ export class FinancialController {
       throw new Error('Only client users can access monthly expenses');
     }
 
-    const monthlyExpenses = await this.financialService.calculateMonthlyExpenses(clientId);
+    const total = await this.financialService.calculateMonthlyExpenses(clientId);
 
     return {
-      monthlyExpenses,
-      message: 'Estimated monthly fixed expenses based on recurring payments',
+      total,
+      monthlyExpenses: total,
+      message: 'Estimated monthly fixed expenses based on recurring payments and installments',
     };
+  }
+
+  @Get('distribution/emergency-fund')
+  async getEmergencyFund(@Request() req) {
+    const clientId = req.user.clientId;
+
+    if (!clientId) {
+      throw new Error('Only client users can access emergency fund calculation');
+    }
+
+    return this.financialService.calculateEmergencyFund(clientId);
   }
 
   @Post('distribution/categories')
@@ -725,6 +737,19 @@ export class FinancialController {
     }
 
     return this.financialService.deleteDistributionCategory(id, clientId);
+  }
+
+  // ========== MONTHLY COSTS ==========
+  @Get('monthly-costs')
+  async getMonthlyCosts(@Request() req, @Query('monthsAhead') monthsAhead?: string) {
+    const clientId = req.user.clientId;
+
+    if (!clientId) {
+      throw new Error('Only client users can access monthly costs');
+    }
+
+    const months = monthsAhead ? parseInt(monthsAhead) : 6;
+    return this.financialService.getMonthlyCosts(clientId, months);
   }
 
   // ========== CRON TRIGGERS (FOR TESTING) ==========

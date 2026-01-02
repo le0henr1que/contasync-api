@@ -98,6 +98,56 @@ export class FinancialService {
       }))
       .sort((a, b) => b.amount - a.amount);
 
+    // Monthly costs calculation (recurring + installments)
+    const recurringPayments = await this.prisma.recurringPayment.findMany({
+      where: {
+        clientId,
+        isActive: true,
+      },
+    });
+
+    const recurringMonthly = recurringPayments.reduce((sum, payment) => {
+      const amount = Number(payment.amount);
+      switch (payment.frequency) {
+        case 'MONTHLY':
+          return sum + amount;
+        case 'QUARTERLY':
+          return sum + (amount / 3);
+        case 'SEMIANNUAL':
+          return sum + (amount / 6);
+        case 'YEARLY':
+          return sum + (amount / 12);
+        default:
+          return sum;
+      }
+    }, 0);
+
+    const allInstallments = await this.prisma.installment.findMany({
+      where: {
+        clientId,
+        status: 'ACTIVE',
+      },
+      include: {
+        payments: true,
+      },
+    });
+
+    const installmentsThisMonth = allInstallments.reduce((sum, inst) => {
+      const thisMonthPayments = inst.payments.filter(p => {
+        const dueDate = new Date(p.dueDate);
+        return p.status === 'PENDING' &&
+               dueDate.getMonth() === now.getMonth() &&
+               dueDate.getFullYear() === now.getFullYear();
+      });
+      return sum + thisMonthPayments.reduce((s, p) => s + Number(p.amount), 0);
+    }, 0);
+
+    const monthlyCost = {
+      recurringMonthly,
+      installmentsThisMonth,
+      total: recurringMonthly + installmentsThisMonth,
+    };
+
     return {
       currentMonth: {
         totalIncome,
@@ -105,6 +155,7 @@ export class FinancialService {
         balance: totalIncome - totalExpense,
         transactionCount: currentMonthTransactions.length,
       },
+      monthlyCost,
       lastSixMonths: [],
       categoryDistribution,
       recentTransactions,
@@ -307,6 +358,14 @@ export class FinancialService {
       }, 0),
     };
 
+    // Monthly expenses projection (recurring + installments for current month)
+    const monthlyExpensesProjection = {
+      recurringMonthly: recurringMetrics.monthlyTotal,
+      installmentsThisMonth: installmentsMetrics.upcomingThisMonth,
+      total: recurringMetrics.monthlyTotal + installmentsMetrics.upcomingThisMonth,
+      description: 'Total de gastos mensais fixos (recorrentes + parcelas do mês)',
+    };
+
     // Financial health indicators
     const averageMonthlyIncome = monthlyTrends.reduce((sum, m) => sum + m.income, 0) / monthlyTrends.length;
     const averageMonthlyExpense = monthlyTrends.reduce((sum, m) => sum + m.expense, 0) / monthlyTrends.length;
@@ -352,6 +411,7 @@ export class FinancialService {
       goals: goalsMetrics,
       recurring: recurringMetrics,
       installments: installmentsMetrics,
+      monthlyExpenses: monthlyExpensesProjection,
       investments: investmentsMetrics,
       savings: savingsMetrics,
       healthIndicators: {
@@ -1847,6 +1907,20 @@ export class FinancialService {
       },
     });
 
+    // Create a financial transaction (expense) to track in metrics
+    await this.prisma.transaction.create({
+      data: {
+        clientId,
+        type: 'EXPENSE',
+        category: 'INVESTMENT',
+        description: description || `Depósito em ${investment.name}`,
+        amount: depositAmount,
+        date: new Date(),
+        source: 'INVESTMENT',
+        isFixed: false,
+      },
+    });
+
     // Calculate and return with calculated fields
     const finalTotalInvested = Number(updatedInvestment.totalInvested);
     const finalCurrentValue = Number(updatedInvestment.currentValue);
@@ -1922,6 +1996,20 @@ export class FinancialService {
         amount: withdrawAmount,
         date: new Date(),
         description: description || 'Retirada da caixinha',
+      },
+    });
+
+    // Create a financial transaction (income) to track in metrics
+    await this.prisma.transaction.create({
+      data: {
+        clientId,
+        type: 'INCOME',
+        category: 'INVESTMENT_RETURN',
+        description: description || `Retirada de ${investment.name}`,
+        amount: withdrawAmount,
+        date: new Date(),
+        source: 'INVESTMENT',
+        isFixed: false,
       },
     });
 
@@ -2437,7 +2525,6 @@ export class FinancialService {
       where: { clientId },
       include: {
         categories: {
-          where: { isActive: true },
           orderBy: { priority: 'asc' },
         },
       },
@@ -2457,10 +2544,84 @@ export class FinancialService {
       });
     }
 
-    return config;
+    // Calculate monthly spent for each category based on current month's distribution transactions
+    const now = new Date();
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+
+    // Enrich categories with monthly spent data
+    const enrichedCategories = await Promise.all(
+      config.categories.map(async (category) => {
+        // Find all distribution transactions for this category this month
+        const transactions = await this.prisma.financialTransaction.findMany({
+          where: {
+            clientId,
+            type: 'EXPENSE',
+            category: 'INVESTMENT',
+            date: {
+              gte: startOfMonth,
+              lte: endOfMonth,
+            },
+            notes: {
+              contains: `Categoria: ${category.name}`,
+            },
+          },
+        });
+
+        const monthlySpent = transactions.reduce((sum, txn) => sum + Number(txn.amount), 0);
+
+        return {
+          ...category,
+          monthlySpent: Math.round(monthlySpent * 100) / 100,
+        };
+      })
+    );
+
+    return {
+      ...config,
+      categories: enrichedCategories,
+    };
+  }
+
+  async calculateEmergencyFund(clientId: string) {
+    // Calculate monthly fixed costs
+    const monthlyFixedCost = await this.calculateMonthlyExpenses(clientId);
+
+    // Emergency fund target: 12 months of fixed costs
+    const emergencyFundTarget = monthlyFixedCost * 12;
+
+    // Find emergency fund goal
+    const emergencyGoal = await this.prisma.financialGoal.findFirst({
+      where: {
+        clientId,
+        category: 'EMERGENCY_FUND',
+        status: {
+          in: ['ACTIVE', 'COMPLETED'],
+        },
+      },
+      orderBy: {
+        createdAt: 'desc',
+      },
+    });
+
+    const currentAmount = emergencyGoal ? Number(emergencyGoal.currentAmount) : 0;
+    const remaining = Math.max(0, emergencyFundTarget - currentAmount);
+
+    // Calculate monthly contribution suggestion (to complete in 12 months)
+    const monthlyContributionSuggestion = remaining / 12;
+
+    return {
+      monthlyFixedCost,
+      emergencyFundTarget,
+      currentAmount,
+      remaining,
+      monthlyContributionSuggestion,
+      percentageComplete: emergencyFundTarget > 0 ? (currentAmount / emergencyFundTarget) * 100 : 0,
+    };
   }
 
   async calculateMonthlyExpenses(clientId: string): Promise<number> {
+    // Calculate recurring payments
     const recurringPayments = await this.prisma.recurringPayment.findMany({
       where: {
         clientId,
@@ -2468,7 +2629,7 @@ export class FinancialService {
       },
     });
 
-    const monthlyTotal = recurringPayments.reduce((sum, payment) => {
+    const recurringTotal = recurringPayments.reduce((sum, payment) => {
       const amount = Number(payment.amount);
 
       switch (payment.frequency) {
@@ -2485,7 +2646,32 @@ export class FinancialService {
       }
     }, 0);
 
-    return monthlyTotal;
+    // Calculate installment payments for current month
+    const now = new Date();
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+
+    // Find all installment payments with dueDate in current month
+    const installmentPaymentsThisMonth = await this.prisma.installmentPayment.findMany({
+      where: {
+        dueDate: {
+          gte: startOfMonth,
+          lte: endOfMonth,
+        },
+        status: {
+          in: ['PENDING', 'PAID'],
+        },
+        installment: {
+          clientId: clientId,
+        },
+      },
+    });
+
+    const installmentsTotal = installmentPaymentsThisMonth.reduce((sum, payment) => {
+      return sum + Number(payment.amount);
+    }, 0);
+
+    return recurringTotal + installmentsTotal;
   }
 
   async simulateDistribution(clientId: string, incomeAmount: number) {
@@ -2501,14 +2687,22 @@ export class FinancialService {
       fixedExpenses = await this.calculateMonthlyExpenses(clientId);
     }
 
+    // Calculate available amount after fixed expenses only
     const availableAmount = incomeAmount - fixedExpenses;
 
     if (availableAmount < 0) {
       throw new Error('Income is not enough to cover fixed expenses');
     }
 
-    // Calculate distribution based on categories
-    const distribution = config.categories.map(category => {
+    // Calculate emergency fund recommendation (10-15% of income)
+    const emergencyFundTarget = fixedExpenses * 12;
+    const suggestedEmergencyPercentage = Math.min(15, Math.max(10, (fixedExpenses / incomeAmount) * 100));
+
+    // Only use active categories for simulation
+    const activeCategories = config.categories.filter(cat => cat.isActive);
+
+    // Calculate distribution based on active categories
+    const distribution = activeCategories.map(category => {
       const amount = (Number(category.percentage) / 100) * availableAmount;
 
       return {
@@ -2522,7 +2716,7 @@ export class FinancialService {
       };
     });
 
-    const totalPercentage = config.categories.reduce(
+    const totalPercentage = activeCategories.reduce(
       (sum, cat) => sum + Number(cat.percentage),
       0
     );
@@ -2540,6 +2734,11 @@ export class FinancialService {
       totalDistributed,
       remaining: availableAmount - totalDistributed,
       distribution,
+      emergencyFundRecommendation: {
+        target: emergencyFundTarget,
+        suggestedPercentage: Math.round(suggestedEmergencyPercentage * 100) / 100,
+        suggestedAmount: Math.round((incomeAmount * suggestedEmergencyPercentage / 100) * 100) / 100,
+      },
     };
   }
 
@@ -2718,6 +2917,125 @@ export class FinancialService {
     });
 
     return { success: true, message: 'Category deleted successfully' };
+  }
+
+  // ========== MONTHLY COSTS ==========
+  async getMonthlyCosts(clientId: string, monthsAhead: number = 6) {
+    const now = new Date();
+    const monthlyCosts = [];
+
+    // Get recurring payments
+    const recurringPayments = await this.prisma.recurringPayment.findMany({
+      where: {
+        clientId,
+        isActive: true,
+      },
+    });
+
+    // Get all active installments
+    const installments = await this.prisma.installment.findMany({
+      where: {
+        clientId,
+        status: 'ACTIVE',
+      },
+      include: {
+        payments: {
+          where: {
+            status: 'PENDING',
+          },
+        },
+      },
+    });
+
+    // Calculate for each month
+    for (let i = 0; i < monthsAhead; i++) {
+      const targetDate = new Date(now.getFullYear(), now.getMonth() + i, 1);
+      const monthKey = format(targetDate, 'yyyy-MM');
+      const monthLabel = format(targetDate, 'MMM/yy', { locale: ptBR });
+      const monthFull = format(targetDate, 'MMMM yyyy', { locale: ptBR });
+
+      // Calculate recurring costs for this month
+      const recurringCost = recurringPayments.reduce((sum, payment) => {
+        const amount = Number(payment.amount);
+
+        // Check if payment should be active in this month
+        const paymentStart = new Date(payment.startDate);
+        const paymentEnd = payment.endDate ? new Date(payment.endDate) : null;
+
+        if (targetDate < paymentStart) return sum;
+        if (paymentEnd && targetDate > paymentEnd) return sum;
+
+        switch (payment.frequency) {
+          case 'MONTHLY':
+            return sum + amount;
+          case 'QUARTERLY':
+            // Check if this month is a quarter month
+            const monthsSinceStart = (targetDate.getFullYear() - paymentStart.getFullYear()) * 12 +
+                                     (targetDate.getMonth() - paymentStart.getMonth());
+            if (monthsSinceStart % 3 === 0) {
+              return sum + amount;
+            }
+            return sum;
+          case 'SEMIANNUAL':
+            const monthsSinceStartSemi = (targetDate.getFullYear() - paymentStart.getFullYear()) * 12 +
+                                         (targetDate.getMonth() - paymentStart.getMonth());
+            if (monthsSinceStartSemi % 6 === 0) {
+              return sum + amount;
+            }
+            return sum;
+          case 'YEARLY':
+            const monthsSinceStartYear = (targetDate.getFullYear() - paymentStart.getFullYear()) * 12 +
+                                         (targetDate.getMonth() - paymentStart.getMonth());
+            if (monthsSinceStartYear % 12 === 0) {
+              return sum + amount;
+            }
+            return sum;
+          default:
+            return sum;
+        }
+      }, 0);
+
+      // Calculate installment costs for this month
+      const installmentCost = installments.reduce((sum, inst) => {
+        const monthPayments = inst.payments.filter(p => {
+          const dueDate = new Date(p.dueDate);
+          return dueDate.getMonth() === targetDate.getMonth() &&
+                 dueDate.getFullYear() === targetDate.getFullYear();
+        });
+        return sum + monthPayments.reduce((s, p) => s + Number(p.amount), 0);
+      }, 0);
+
+      const total = recurringCost + installmentCost;
+
+      monthlyCosts.push({
+        month: monthKey,
+        monthLabel,
+        monthFull,
+        recurringCost,
+        installmentCost,
+        total,
+        isCurrent: i === 0,
+      });
+    }
+
+    // Calculate averages and totals
+    const averageMonthly = monthlyCosts.reduce((sum, m) => sum + m.total, 0) / monthlyCosts.length;
+    const currentMonth = monthlyCosts[0];
+    const recurringPaymentsCount = recurringPayments.length;
+    const activeInstallmentsCount = installments.length;
+
+    return {
+      currentMonth,
+      projection: monthlyCosts,
+      summary: {
+        averageMonthly,
+        recurringPaymentsCount,
+        activeInstallmentsCount,
+        totalRecurringMonthly: currentMonth.recurringCost,
+        totalInstallmentsThisMonth: currentMonth.installmentCost,
+        totalThisMonth: currentMonth.total,
+      },
+    };
   }
 
   // ========== AI INSIGHTS ==========
