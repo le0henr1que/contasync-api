@@ -1,6 +1,5 @@
 import { Module, NestModule, MiddlewareConsumer } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
-import { ScheduleModule } from '@nestjs/schedule';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { PrismaModule } from './prisma/prisma.module';
@@ -34,7 +33,6 @@ import { FinancialModule } from './financial/financial.module';
     ConfigModule.forRoot({
       isGlobal: true,
     }),
-    ScheduleModule.forRoot(),
     PrismaModule,
     CommonModule,
     StripeModule,

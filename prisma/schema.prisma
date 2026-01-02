@@ -728,11 +728,11 @@ model RecurringPayment {
   category              TransactionCategory
   frequency             RecurringFrequency
   dayOfMonth            Int
-  startDate             DateTime
+  startDate             DateTime?
   endDate               DateTime?
   isActive              Boolean                   @default(true)
   lastProcessedDate     DateTime?
-  nextDueDate           DateTime
+  nextDueDate           DateTime?
 
   // Metadata
   metadata              Json?
@@ -744,7 +744,6 @@ model RecurringPayment {
 
   @@index([clientId])
   @@index([isActive])
-  @@index([nextDueDate])
   @@map("recurring_payments")
 }
 

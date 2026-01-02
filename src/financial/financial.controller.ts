@@ -2,7 +2,6 @@ import { Controller, Get, Post, Patch, Delete, Param, Query, Body, UseGuards, Re
 import { FileInterceptor } from '@nestjs/platform-express';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { FinancialService } from './financial.service';
-import { RecurringPaymentsCronService } from './cron/recurring-payments.cron';
 import { CreateDistributionCategoryDto } from './dto/create-distribution-category.dto';
 import { UpdateDistributionCategoryDto } from './dto/update-distribution-category.dto';
 import { UpdateDistributionConfigDto } from './dto/update-distribution-config.dto';
@@ -13,7 +12,6 @@ import { SimulateDistributionDto } from './dto/simulate-distribution.dto';
 export class FinancialController {
   constructor(
     private readonly financialService: FinancialService,
-    private readonly recurringPaymentsCron: RecurringPaymentsCronService,
   ) {}
 
   // ========== ANALYTICS ==========
@@ -226,6 +224,21 @@ export class FinancialController {
     }
 
     return this.financialService.toggleRecurringPayment(id, clientId);
+  }
+
+  @Post('recurring/:id/pay')
+  async processRecurringPaymentManually(
+    @Param('id') id: string,
+    @Body() body: { paymentDate?: string },
+    @Request() req
+  ) {
+    const clientId = req.user.clientId;
+
+    if (!clientId) {
+      throw new Error('Only client users can process recurring payments');
+    }
+
+    return this.financialService.processRecurringPaymentManually(id, clientId, body);
   }
 
   // ========== INSTALLMENTS ==========
@@ -750,12 +763,5 @@ export class FinancialController {
 
     const months = monthsAhead ? parseInt(monthsAhead) : 6;
     return this.financialService.getMonthlyCosts(clientId, months);
-  }
-
-  // ========== CRON TRIGGERS (FOR TESTING) ==========
-  @Post('cron/process-recurring-payments')
-  async triggerRecurringPaymentsProcessing() {
-    await this.recurringPaymentsCron.manualTrigger();
-    return { success: true, message: 'Recurring payments processing triggered' };
   }
 }

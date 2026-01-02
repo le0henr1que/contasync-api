@@ -46,6 +46,7 @@ export class FinancialService {
         clientId,
         isActive: true,
         nextDueDate: {
+          not: null,
           gte: now,
           lte: addDays(now, 30),
         },
@@ -1162,7 +1163,7 @@ export class FinancialService {
       throw new Error('Recurring payment not found');
     }
 
-    const { title, description, amount, frequency, category, dayOfMonth, endDate } = data;
+    const { title, description, amount, frequency, category, dayOfMonth, endDate, nextDueDate } = data;
 
     const updateData: any = {};
     if (title) updateData.title = title;
@@ -1172,6 +1173,7 @@ export class FinancialService {
     if (category) updateData.category = category;
     if (dayOfMonth !== undefined) updateData.dayOfMonth = Number(dayOfMonth);
     if (endDate !== undefined) updateData.endDate = endDate ? new Date(endDate) : null;
+    if (nextDueDate !== undefined) updateData.nextDueDate = new Date(nextDueDate);
 
     const payment = await this.prisma.recurringPayment.update({
       where: { id },
@@ -1218,6 +1220,117 @@ export class FinancialService {
     });
 
     return payment;
+  }
+
+  async processRecurringPaymentManually(
+    id: string,
+    clientId: string,
+    body: { paymentDate?: string }
+  ) {
+    const { paymentDate } = body;
+
+    // Find the recurring payment
+    const recurring = await this.prisma.recurringPayment.findFirst({
+      where: { id, clientId },
+    });
+
+    if (!recurring) {
+      throw new Error('Recurring payment not found');
+    }
+
+    if (!recurring.isActive) {
+      throw new Error('Cannot process an inactive recurring payment');
+    }
+
+    // Use provided date or current date
+    const transactionDate = paymentDate ? new Date(paymentDate) : new Date();
+
+    // Create the financial transaction
+    const transaction = await this.prisma.financialTransaction.create({
+      data: {
+        clientId: recurring.clientId,
+        type: this.getCategoryType(recurring.category),
+        category: recurring.category,
+        description: recurring.description || recurring.title,
+        amount: recurring.amount,
+        date: transactionDate,
+        isFixed: true,
+        notes: `Processado manualmente de: ${recurring.title}`,
+        sourceType: 'RECURRING',
+        sourceId: recurring.id,
+      },
+    });
+
+    // Calculate next due date
+    const nextDueDate = this.calculateNextDueDate(
+      recurring.nextDueDate,
+      recurring.frequency,
+      recurring.dayOfMonth,
+    );
+
+    // Update the recurring payment
+    const updatedRecurring = await this.prisma.recurringPayment.update({
+      where: { id: recurring.id },
+      data: {
+        lastProcessedDate: recurring.nextDueDate,
+        nextDueDate: nextDueDate,
+      },
+    });
+
+    return {
+      message: 'Pagamento recorrente processado com sucesso',
+      transaction,
+      recurring: updatedRecurring,
+    };
+  }
+
+  private getCategoryType(category: string): 'INCOME' | 'EXPENSE' {
+    const incomeCategories = [
+      'SALARY',
+      'FREELANCE',
+      'INVESTMENT_RETURN',
+      'GIFT',
+      'OTHER_INCOME',
+    ];
+
+    return incomeCategories.includes(category) ? 'INCOME' : 'EXPENSE';
+  }
+
+  private calculateNextDueDate(
+    currentDueDate: Date,
+    frequency: string,
+    dayOfMonth: number,
+  ): Date {
+    let nextDate: Date;
+
+    switch (frequency) {
+      case 'MONTHLY':
+        nextDate = new Date(currentDueDate);
+        nextDate.setMonth(nextDate.getMonth() + 1);
+        break;
+      case 'QUARTERLY':
+        nextDate = new Date(currentDueDate);
+        nextDate.setMonth(nextDate.getMonth() + 3);
+        break;
+      case 'SEMIANNUAL':
+        nextDate = new Date(currentDueDate);
+        nextDate.setMonth(nextDate.getMonth() + 6);
+        break;
+      case 'YEARLY':
+        nextDate = new Date(currentDueDate);
+        nextDate.setFullYear(nextDate.getFullYear() + 1);
+        break;
+      default:
+        throw new Error(`Unknown recurring frequency: ${frequency}`);
+    }
+
+    // Set to the specified day of month
+    nextDate.setDate(dayOfMonth);
+
+    // Reset time to start of day
+    nextDate.setHours(0, 0, 0, 0);
+
+    return nextDate;
   }
 
   // ========== INSTALLMENTS ==========
@@ -1908,7 +2021,7 @@ export class FinancialService {
     });
 
     // Create a financial transaction (expense) to track in metrics
-    await this.prisma.transaction.create({
+    await this.prisma.financialTransaction.create({
       data: {
         clientId,
         type: 'EXPENSE',
@@ -1916,7 +2029,7 @@ export class FinancialService {
         description: description || `Depósito em ${investment.name}`,
         amount: depositAmount,
         date: new Date(),
-        source: 'INVESTMENT',
+        sourceType: 'INVESTMENT',
         isFixed: false,
       },
     });
@@ -2000,7 +2113,7 @@ export class FinancialService {
     });
 
     // Create a financial transaction (income) to track in metrics
-    await this.prisma.transaction.create({
+    await this.prisma.financialTransaction.create({
       data: {
         clientId,
         type: 'INCOME',
@@ -2008,7 +2121,7 @@ export class FinancialService {
         description: description || `Retirada de ${investment.name}`,
         amount: withdrawAmount,
         date: new Date(),
-        source: 'INVESTMENT',
+        sourceType: 'INVESTMENT',
         isFixed: false,
       },
     });
