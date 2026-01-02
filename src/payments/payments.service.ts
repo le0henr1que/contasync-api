@@ -595,43 +595,6 @@ export class PaymentsService {
     };
   }
 
-  /**
-   * Update payment statuses for all unpaid payments
-   * Runs daily at midnight
-   */
-  @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT)
-  async updatePaymentStatuses() {
-    this.logger.log('Running daily payment status update...');
-
-    try {
-      // Get all payments that are not paid
-      const payments = await this.prisma.payment.findMany({
-        where: {
-          paymentDate: null,
-        },
-      });
-
-      let updatedCount = 0;
-
-      for (const payment of payments) {
-        const newStatus = this.calculatePaymentStatus(payment.paymentDate, payment.dueDate);
-
-        // Only update if status changed
-        if (payment.status !== newStatus) {
-          await this.prisma.payment.update({
-            where: { id: payment.id },
-            data: { status: newStatus },
-          });
-          updatedCount++;
-        }
-      }
-
-      this.logger.log(`Payment status update complete. Updated ${updatedCount} payments.`);
-    } catch (error) {
-      this.logger.error('Error updating payment statuses', error);
-    }
-  }
-
 
   /**
    * Get client by user ID
