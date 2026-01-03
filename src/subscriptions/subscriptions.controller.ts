@@ -19,10 +19,16 @@ export class SubscriptionsController {
    * Get current user's subscription details
    */
   @Get('me')
-  @Roles(Role.ACCOUNTANT)
+  @Roles(Role.ACCOUNTANT, Role.CLIENT)
   async getMySubscription(@Request() req) {
-    const accountantId = req.user.accountantId;
-    return this.subscriptionsService.getSubscription(accountantId);
+    // Support both accountants and clients
+    if (req.user.role === Role.CLIENT) {
+      const clientId = req.user.clientId;
+      return this.subscriptionsService.getClientSubscription(clientId);
+    } else {
+      const accountantId = req.user.accountantId;
+      return this.subscriptionsService.getSubscription(accountantId);
+    }
   }
 
   /**
@@ -31,10 +37,16 @@ export class SubscriptionsController {
    * Get current usage against plan limits
    */
   @Get('me/usage')
-  @Roles(Role.ACCOUNTANT)
+  @Roles(Role.ACCOUNTANT, Role.CLIENT)
   async getMyUsage(@Request() req) {
-    const accountantId = req.user.accountantId;
-    return this.subscriptionsService.getUsage(accountantId);
+    // Support both accountants and clients
+    if (req.user.role === Role.CLIENT) {
+      const clientId = req.user.clientId;
+      return this.subscriptionsService.getClientUsage(clientId);
+    } else {
+      const accountantId = req.user.accountantId;
+      return this.subscriptionsService.getUsage(accountantId);
+    }
   }
 
   /**
@@ -42,16 +54,22 @@ export class SubscriptionsController {
    *
    * Create a Stripe Checkout Session for subscription
    *
-   * Only accountants can create subscriptions
+   * Both accountants and clients can create subscriptions
    */
   @Post('checkout')
-  @Roles(Role.ACCOUNTANT)
+  @Roles(Role.ACCOUNTANT, Role.CLIENT)
   async createCheckout(
     @Request() req,
     @Body() createCheckoutDto: CreateCheckoutDto,
   ): Promise<{ url: string }> {
-    const accountantId = req.user.accountantId;
-    return this.subscriptionsService.createCheckoutSession(accountantId, createCheckoutDto);
+    // Support both accountants and clients
+    if (req.user.role === Role.CLIENT) {
+      const clientId = req.user.clientId;
+      return this.subscriptionsService.createClientCheckoutSession(clientId, createCheckoutDto);
+    } else {
+      const accountantId = req.user.accountantId;
+      return this.subscriptionsService.createCheckoutSession(accountantId, createCheckoutDto);
+    }
   }
 
   /**
@@ -115,12 +133,18 @@ export class SubscriptionsController {
    * Allows customers to manage subscription, payment methods, and invoices
    */
   @Post('portal')
-  @Roles(Role.ACCOUNTANT)
+  @Roles(Role.ACCOUNTANT, Role.CLIENT)
   async createPortal(
     @Request() req,
     @Body('returnUrl') returnUrl?: string,
   ): Promise<{ url: string }> {
-    const accountantId = req.user.accountantId;
-    return this.subscriptionsService.createPortalSession(accountantId, returnUrl);
+    // Support both accountants and clients
+    if (req.user.role === Role.CLIENT) {
+      const clientId = req.user.clientId;
+      return this.subscriptionsService.createClientPortalSession(clientId, returnUrl);
+    } else {
+      const accountantId = req.user.accountantId;
+      return this.subscriptionsService.createPortalSession(accountantId, returnUrl);
+    }
   }
 }

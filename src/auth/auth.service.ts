@@ -440,8 +440,8 @@ export class AuthService {
       let checkoutUrl: string | undefined;
       if (selectedPlan.stripePriceIdMonthly || selectedPlan.stripePriceIdYearly) {
         try {
-          // For individual clients, we'll use the client subscription
-          const checkoutSession = await this.subscriptionsService.createCheckoutSession(
+          // For individual clients, use the dedicated client checkout method
+          const checkoutSession = await this.subscriptionsService.createClientCheckoutSession(
             user.client!.id,
             {
               planId: selectedPlan.id,

@@ -52,6 +52,20 @@ export class InvitationsController {
   }
 
   /**
+   * Get pending invitations for the current client
+   * GET /api/invitations/me/pending
+   *
+   * Only clients can access their pending invitations
+   */
+  @Get('me/pending')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.CLIENT)
+  async findMyPendingInvitations(@Request() req: any) {
+    const email = req.user.email;
+    return this.invitationsService.findPendingInvitationsForClient(email);
+  }
+
+  /**
    * Accept an invitation
    * POST /api/invitations/accept
    *

@@ -4,8 +4,9 @@ export class CreateInvitationDto {
   @IsEmail()
   email: string;
 
+  @IsOptional()
   @IsString()
-  name: string;
+  name?: string;
 
   @IsOptional()
   @IsString()

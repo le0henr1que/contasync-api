@@ -52,4 +52,12 @@ export class CreateFolderDto {
   @IsString()
   @MaxLength(255)
   description?: string;
+
+  @ApiPropertyOptional({
+    description: 'ID do cliente (obrigatório para contadores)',
+    example: 'cmjx5w42s0003vpxaq5w1ifep',
+  })
+  @IsOptional()
+  @IsString()
+  clientId?: string;
 }

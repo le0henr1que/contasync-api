@@ -87,6 +87,9 @@ export class DocumentFoldersService {
     const folders = await this.prisma.documentFolder.findMany({
       where: { clientId },
       include: {
+        documents: {
+          orderBy: { createdAt: 'desc' },
+        },
         _count: {
           select: { documents: true },
         },
@@ -124,8 +127,12 @@ export class DocumentFoldersService {
   }
 
   async update(id: string, updateFolderDto: UpdateFolderDto, clientId: string) {
+    // Se clientId for null (contador), buscar apenas pelo id
+    // Se clientId for fornecido (cliente), validar que pertence ao cliente
+    const whereClause = clientId ? { id, clientId } : { id };
+
     const folder = await this.prisma.documentFolder.findFirst({
-      where: { id, clientId },
+      where: whereClause,
     });
 
     if (!folder) {
@@ -145,8 +152,12 @@ export class DocumentFoldersService {
   }
 
   async remove(id: string, clientId: string) {
+    // Se clientId for null (contador), buscar apenas pelo id
+    // Se clientId for fornecido (cliente), validar que pertence ao cliente
+    const whereClause = clientId ? { id, clientId } : { id };
+
     const folder = await this.prisma.documentFolder.findFirst({
-      where: { id, clientId },
+      where: whereClause,
       include: {
         _count: { select: { documents: true } },
       },
@@ -166,7 +177,7 @@ export class DocumentFoldersService {
     if (folder._count.documents > 0) {
       const otherFolder = await this.prisma.documentFolder.findFirst({
         where: {
-          clientId,
+          clientId: folder.clientId, // Usar o clientId da pasta que está sendo deletada
           type: FolderType.OUTROS,
           isDefault: true,
         },

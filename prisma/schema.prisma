@@ -82,6 +82,9 @@ model Client {
   expenseModuleEnabled    Boolean           @default(false)  // Accounting modules (for clients with accountant)
   financialModuleEnabled  Boolean           @default(false)  // Personal finance module (for individual clients)
 
+  // Stripe integration
+  stripeCustomerId        String?           @unique
+
   deletedAt               DateTime?
   createdAt               DateTime          @default(now())
   updatedAt               DateTime          @updatedAt
@@ -518,6 +521,7 @@ enum NotificationType {
   DOCUMENT_REQUESTED
   PAYMENT_REGISTERED
   PAYMENT_OVERDUE
+  INVITATION_RECEIVED
 }
 
 enum ExpenseCategory {

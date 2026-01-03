@@ -4,6 +4,7 @@ import Stripe from 'stripe';
 import { STRIPE_CLIENT } from '../stripe/stripe.module';
 import { PrismaService } from '../prisma/prisma.service';
 import { EmailService } from '../email/email.service';
+import { FolderType } from '@prisma/client';
 
 /**
  * WebhooksService - Handles Stripe webhook events
@@ -15,6 +16,64 @@ import { EmailService } from '../email/email.service';
 export class WebhooksService {
   private readonly logger = new Logger(WebhooksService.name);
   private readonly webhookSecret: string;
+
+  // Default folders to create for new clients
+  private readonly DEFAULT_FOLDERS = [
+    {
+      name: 'Notas Fiscais',
+      type: FolderType.NOTAS_FISCAIS,
+      icon: '🧾',
+      color: '#3b82f6',
+      description: 'Notas fiscais de entrada e saída',
+      isDefault: true,
+      sortOrder: 1,
+    },
+    {
+      name: 'Contratos',
+      type: FolderType.CONTRATOS,
+      icon: '📄',
+      color: '#8b5cf6',
+      description: 'Contratos e acordos',
+      isDefault: true,
+      sortOrder: 2,
+    },
+    {
+      name: 'Declarações',
+      type: FolderType.DECLARACOES,
+      icon: '📋',
+      color: '#10b981',
+      description: 'Declarações fiscais e contábeis',
+      isDefault: true,
+      sortOrder: 3,
+    },
+    {
+      name: 'Comprovantes',
+      type: FolderType.COMPROVANTES,
+      icon: '🧾',
+      color: '#f59e0b',
+      description: 'Comprovantes de pagamento',
+      isDefault: true,
+      sortOrder: 4,
+    },
+    {
+      name: 'Balancetes',
+      type: FolderType.BALANCETES,
+      icon: '📊',
+      color: '#06b6d4',
+      description: 'Balancetes e demonstrativos contábeis',
+      isDefault: true,
+      sortOrder: 5,
+    },
+    {
+      name: 'Outros',
+      type: FolderType.OUTROS,
+      icon: '📁',
+      color: '#64748b',
+      description: 'Outros documentos diversos',
+      isDefault: true,
+      sortOrder: 6,
+    },
+  ];
 
   constructor(
     @Inject(STRIPE_CLIENT) private readonly stripe: Stripe,
@@ -128,8 +187,11 @@ export class WebhooksService {
     const stripeSubscription = await this.stripe.subscriptions.retrieve(stripeSubscriptionId);
 
     if (flow === 'public_checkout') {
-      // PUBLIC CHECKOUT FLOW: Create new account from metadata
+      // PUBLIC CHECKOUT FLOW: Create new accountant account from metadata
       await this.handlePublicCheckout(session, stripeSubscription);
+    } else if (flow === 'public_client_checkout') {
+      // PUBLIC CLIENT CHECKOUT FLOW: Create new individual client account from metadata
+      await this.handlePublicClientCheckout(session, stripeSubscription);
     } else {
       // AUTHENTICATED CHECKOUT FLOW: Update existing account
       await this.handleAuthenticatedCheckout(session, stripeSubscription);
@@ -242,6 +304,131 @@ export class WebhooksService {
       await this.emailService.sendWelcomeNewAccount(email, {
         name,
         companyName,
+        planName: plan.name,
+        loginUrl: `${frontendUrl}/login`,
+      });
+      this.logger.log(`📧 Welcome email sent to ${email}`);
+    } catch (error) {
+      this.logger.error(`❌ Failed to send welcome email to ${email}: ${error.message}`);
+      // Don't throw - email failure shouldn't fail the webhook
+    }
+  }
+
+  /**
+   * Handle public client checkout: Create User + Client + Subscription from metadata
+   */
+  private async handlePublicClientCheckout(
+    session: Stripe.Checkout.Session,
+    stripeSubscription: Stripe.Subscription,
+  ): Promise<void> {
+    this.logger.log(`🆕 Processing PUBLIC CLIENT checkout for session: ${session.id}`);
+
+    const metadata = session.metadata;
+    const email = metadata?.email;
+    const name = metadata?.name;
+    const passwordHash = metadata?.passwordHash;
+    const cpf = metadata?.cpf;
+    const planId = metadata?.planId;
+
+    // Validate required metadata
+    if (!email || !name || !passwordHash || !cpf || !planId) {
+      this.logger.error(`❌ Missing required metadata in public client checkout session: ${session.id}`);
+      return;
+    }
+
+    // Check if user already exists (additional safety check)
+    const existingUser = await this.prisma.user.findUnique({
+      where: { email },
+    });
+
+    if (existingUser) {
+      this.logger.error(`❌ User already exists with email: ${email}`);
+      return;
+    }
+
+    // Fetch plan details for email
+    const plan = await this.prisma.plan.findUnique({
+      where: { id: planId },
+    });
+
+    if (!plan) {
+      this.logger.error(`❌ Plan not found: ${planId}`);
+      return;
+    }
+
+    // Create User + Client + Subscription in a transaction
+    const result = await this.prisma.$transaction(async (tx) => {
+      // 1. Create User
+      const user = await tx.user.create({
+        data: {
+          email,
+          name,
+          passwordHash,
+          role: 'CLIENT',
+          isActive: true,
+        },
+      });
+
+      this.logger.log(`✅ User created: ${user.id} (${user.email})`);
+
+      // 2. Create Client
+      const subscriptionStatus = stripeSubscription.status === 'trialing' ? 'TRIALING' : 'ACTIVE';
+
+      const client = await tx.client.create({
+        data: {
+          userId: user.id,
+          cpfCnpj: cpf,
+          financialModuleEnabled: true, // Enable financial module for paid clients
+          expenseModuleEnabled: false, // No expense module (that's for accountant-managed clients)
+          stripeCustomerId: stripeSubscription.customer as string,
+        },
+      });
+
+      this.logger.log(`✅ Client created: ${client.id}`);
+
+      // 3. Create Subscription
+      await tx.subscription.create({
+        data: {
+          clientId: client.id,
+          planId,
+          stripeSubscriptionId: stripeSubscription.id,
+          stripeCustomerId: stripeSubscription.customer as string,
+          status: subscriptionStatus as any,
+          currentPeriodStart: new Date((stripeSubscription as any).current_period_start * 1000),
+          currentPeriodEnd: new Date((stripeSubscription as any).current_period_end * 1000),
+          cancelAtPeriodEnd: stripeSubscription.cancel_at_period_end,
+          canceledAt: stripeSubscription.canceled_at ? new Date(stripeSubscription.canceled_at * 1000) : null,
+          trialEnd: stripeSubscription.trial_end ? new Date(stripeSubscription.trial_end * 1000) : null,
+        },
+      });
+
+      this.logger.log(`✅ Subscription created for client: ${client.id}`);
+
+      return { client };
+    });
+
+    // 4. Create default document folders
+    try {
+      await this.prisma.documentFolder.createMany({
+        data: this.DEFAULT_FOLDERS.map(folder => ({
+          ...folder,
+          clientId: result.client.id,
+        })),
+      });
+      this.logger.log(`📁 Default folders created for client: ${result.client.id}`);
+    } catch (error) {
+      this.logger.error(`❌ Failed to create default folders for client ${result.client.id}: ${error.message}`);
+      // Don't throw - folder creation failure shouldn't fail the webhook
+    }
+
+    this.logger.log(`🎉 Public client checkout completed successfully for ${email}`);
+
+    // Send welcome email
+    try {
+      const frontendUrl = this.configService.get<string>('FRONTEND_URL', 'http://localhost:3001');
+      await this.emailService.sendWelcomeNewAccount(email, {
+        name,
+        companyName: 'Cliente Individual', // Placeholder for individual clients
         planName: plan.name,
         loginUrl: `${frontendUrl}/login`,
       });

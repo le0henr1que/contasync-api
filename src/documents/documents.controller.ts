@@ -259,9 +259,14 @@ export class DocumentsController {
     const { fileStream, fileName, mimeType } =
       await this.documentsService.getDocumentFileForClient(id, client.id);
 
+    // Use 'inline' for PDFs and images to allow preview, 'attachment' for other files
+    const disposition = (mimeType === 'application/pdf' || mimeType.startsWith('image/'))
+      ? `inline; filename="${fileName}"`
+      : `attachment; filename="${fileName}"`;
+
     res.set({
       'Content-Type': mimeType,
-      'Content-Disposition': `attachment; filename="${fileName}"`,
+      'Content-Disposition': disposition,
     });
 
     return new StreamableFile(fileStream);
@@ -285,9 +290,14 @@ export class DocumentsController {
     const { fileStream, fileName, mimeType } =
       await this.documentsService.getDocumentFile(id, accountantId);
 
+    // Use 'inline' for PDFs and images to allow preview, 'attachment' for other files
+    const disposition = (mimeType === 'application/pdf' || mimeType.startsWith('image/'))
+      ? `inline; filename="${fileName}"`
+      : `attachment; filename="${fileName}"`;
+
     res.set({
       'Content-Type': mimeType,
-      'Content-Disposition': `attachment; filename="${fileName}"`,
+      'Content-Disposition': disposition,
     });
 
     return new StreamableFile(fileStream);

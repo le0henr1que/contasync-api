@@ -118,6 +118,99 @@ export class SubscriptionsService {
   }
 
   /**
+   * Create Stripe Checkout Session for Individual Client
+   *
+   * This creates a checkout session for an individual client to subscribe to a plan (e.g., financial module).
+   */
+  async createClientCheckoutSession(
+    clientId: string,
+    createCheckoutDto: CreateCheckoutDto,
+  ): Promise<{ url: string }> {
+    const { planId, successUrl, cancelUrl } = createCheckoutDto;
+    const interval = createCheckoutDto.interval || 'MONTHLY';
+
+    // 1. Fetch plan from database
+    const plan = await this.prisma.plan.findUnique({
+      where: { id: planId },
+    });
+
+    if (!plan) {
+      throw new NotFoundException(`Plan with ID ${planId} not found`);
+    }
+
+    if (!plan.isActive) {
+      throw new BadRequestException(`Plan ${plan.name} is not active`);
+    }
+
+    // 2. Validate plan is for individual clients
+    if (plan.tenantType !== 'INDIVIDUAL') {
+      throw new BadRequestException('Only individual plans can be used for client subscriptions');
+    }
+
+    // 3. Get the correct price ID based on interval
+    const priceId = interval === 'MONTHLY' ? plan.stripePriceIdMonthly : plan.stripePriceIdYearly;
+
+    if (!priceId) {
+      throw new BadRequestException(
+        `Stripe não configurado para este plano. ` +
+        `O plano "${plan.name}" ainda não tem preços configurados no Stripe. ` +
+        `Por favor, configure os price IDs no Stripe Dashboard primeiro ou use o sistema em modo trial.`
+      );
+    }
+
+    // 4. Get or create Stripe customer for client
+    const customer = await this.getOrCreateClientCustomer(clientId);
+
+    this.logger.log(`Creating checkout session for client ${clientId}, plan ${plan.name}, interval ${interval}`);
+
+    // 5. Create Checkout Session
+    const session = await this.stripe.checkout.sessions.create({
+      customer: customer.id,
+      mode: 'subscription',
+      line_items: [
+        {
+          price: priceId,
+          quantity: 1,
+        },
+      ],
+      success_url: successUrl || `${this.appUrl}/client-portal/settings?session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: cancelUrl || `${this.appUrl}/client-portal/settings`,
+
+      metadata: {
+        clientId,
+        planId: plan.id,
+        planSlug: plan.slug,
+        interval,
+        entityType: 'CLIENT',
+      },
+
+      subscription_data: {
+        metadata: {
+          clientId,
+          planId: plan.id,
+          planSlug: plan.slug,
+          entityType: 'CLIENT',
+        },
+        trial_period_days: plan.slug.includes('trial') ? 14 : undefined,
+      },
+
+      allow_promotion_codes: true,
+      tax_id_collection: {
+        enabled: true,
+      },
+      billing_address_collection: 'required',
+      customer_update: {
+        address: 'auto',
+        name: 'auto',
+      },
+    });
+
+    this.logger.log(`Checkout session created for client: ${session.id}`);
+
+    return { url: session.url! };
+  }
+
+  /**
    * Get or create Stripe customer for accountant
    */
   private async getOrCreateCustomer(accountantId: string): Promise<Stripe.Customer> {
@@ -170,6 +263,66 @@ export class SubscriptionsService {
     // Save customer ID to database
     await this.prisma.accountant.update({
       where: { id: accountantId },
+      data: { stripeCustomerId: customer.id },
+    });
+
+    this.logger.log(`Created Stripe customer: ${customer.id}`);
+
+    return customer;
+  }
+
+  /**
+   * Get or create Stripe customer for individual client
+   */
+  private async getOrCreateClientCustomer(clientId: string): Promise<Stripe.Customer> {
+    // Get client from database
+    const client = await this.prisma.client.findUnique({
+      where: { id: clientId },
+      include: { user: true },
+    });
+
+    if (!client) {
+      throw new NotFoundException(`Client with ID ${clientId} not found`);
+    }
+
+    // Check if customer already exists in Stripe
+    if (client.stripeCustomerId) {
+      try {
+        const customer = await this.stripe.customers.retrieve(client.stripeCustomerId);
+
+        if (customer.deleted) {
+          this.logger.warn(`Stripe customer ${client.stripeCustomerId} was deleted, creating new one`);
+        } else {
+          this.logger.log(`Using existing Stripe customer: ${customer.id}`);
+          return customer as Stripe.Customer;
+        }
+      } catch (error) {
+        this.logger.warn(`Failed to retrieve Stripe customer ${client.stripeCustomerId}: ${error.message}`);
+        // Continue to create new customer
+      }
+    }
+
+    // Create new Stripe customer
+    this.logger.log(`Creating new Stripe customer for client ${clientId}`);
+
+    const customer = await this.stripe.customers.create({
+      email: client.user.email,
+      name: client.user.name,
+      metadata: {
+        clientId: client.id,
+        userId: client.userId,
+      },
+      tax_id_data: client.cpfCnpj ? [
+        {
+          type: client.cpfCnpj.length > 11 ? 'br_cnpj' : 'br_cpf',
+          value: this.sanitizeCPFCNPJ(client.cpfCnpj),
+        },
+      ] : undefined,
+    });
+
+    // Save customer ID to database
+    await this.prisma.client.update({
+      where: { id: clientId },
       data: { stripeCustomerId: customer.id },
     });
 
@@ -519,7 +672,7 @@ export class SubscriptionsService {
   }
 
   /**
-   * Get Stripe Customer Portal Session
+   * Get Stripe Customer Portal Session for accountant
    *
    * This allows customers to manage their subscription, payment methods, and invoices.
    */
@@ -545,7 +698,33 @@ export class SubscriptionsService {
   }
 
   /**
-   * Get subscription details
+   * Get Stripe Customer Portal Session for client
+   *
+   * This allows clients to manage their subscription, payment methods, and invoices.
+   */
+  async createClientPortalSession(clientId: string, returnUrl?: string): Promise<{ url: string }> {
+    const client = await this.prisma.client.findUnique({
+      where: { id: clientId },
+    });
+
+    if (!client) {
+      throw new NotFoundException(`Client with ID ${clientId} not found`);
+    }
+
+    if (!client.stripeCustomerId) {
+      throw new BadRequestException('No Stripe customer found. Please subscribe to a plan first.');
+    }
+
+    const session = await this.stripe.billingPortal.sessions.create({
+      customer: client.stripeCustomerId,
+      return_url: returnUrl || `${this.appUrl}/client-portal/settings`,
+    });
+
+    return { url: session.url };
+  }
+
+  /**
+   * Get subscription details for accountant
    */
   async getSubscription(accountantId: string) {
     const accountant = await this.prisma.accountant.findUnique({
@@ -587,7 +766,51 @@ export class SubscriptionsService {
   }
 
   /**
-   * Get current usage against plan limits
+   * Get subscription details for client
+   */
+  async getClientSubscription(clientId: string) {
+    const client = await this.prisma.client.findUnique({
+      where: { id: clientId },
+      include: {
+        subscription: {
+          include: {
+            plan: true,
+          },
+        },
+      },
+    });
+
+    if (!client) {
+      throw new NotFoundException('Client not found');
+    }
+
+    if (!client.subscription) {
+      throw new NotFoundException('No active subscription found');
+    }
+
+    return {
+      id: client.subscription.id,
+      interval: client.subscription.interval,
+      status: client.subscription.status,
+      currentPeriodStart: client.subscription.currentPeriodStart,
+      currentPeriodEnd: client.subscription.currentPeriodEnd,
+      cancelAtPeriodEnd: client.subscription.cancelAtPeriodEnd,
+      trialEnd: client.subscription.trialEnd,
+      plan: {
+        id: client.subscription.plan.id,
+        name: client.subscription.plan.name,
+        slug: client.subscription.plan.slug,
+        description: client.subscription.plan.description,
+        priceMonthly: client.subscription.plan.priceMonthly,
+        priceYearly: client.subscription.plan.priceYearly,
+        limitsJson: client.subscription.plan.limitsJson,
+        featuresJson: client.subscription.plan.featuresJson,
+      },
+    };
+  }
+
+  /**
+   * Get current usage against plan limits for accountant
    */
   async getUsage(accountantId: string) {
     const accountant = await this.prisma.accountant.findUnique({
@@ -677,6 +900,92 @@ export class SubscriptionsService {
   }
 
   /**
+   * Get current usage against plan limits for client
+   */
+  async getClientUsage(clientId: string) {
+    const client = await this.prisma.client.findUnique({
+      where: { id: clientId },
+      include: {
+        subscription: {
+          include: {
+            plan: true,
+          },
+        },
+      },
+    });
+
+    if (!client) {
+      throw new NotFoundException('Client not found');
+    }
+
+    if (!client.subscription?.plan) {
+      throw new NotFoundException('No active subscription found');
+    }
+
+    const limits = client.subscription.plan.limitsJson as any;
+
+    // Count transactions for this client
+    const transactionCount = await this.prisma.financialTransaction.count({
+      where: {
+        clientId: clientId,
+      },
+    });
+
+    // Count recurring payments
+    const recurringCount = await this.prisma.recurringPayment.count({
+      where: {
+        clientId: clientId,
+      },
+    });
+
+    // Count installments
+    const installmentCount = await this.prisma.installment.count({
+      where: {
+        clientId: clientId,
+      },
+    });
+
+    // Count investments
+    const investmentCount = await this.prisma.investment.count({
+      where: {
+        clientId: clientId,
+      },
+    });
+
+    // Count financial goals
+    const goalsCount = await this.prisma.financialGoal.count({
+      where: {
+        clientId: clientId,
+      },
+    });
+
+    return {
+      limits: {
+        maxTransactions: limits.maxTransactions || 0,
+        maxRecurring: limits.maxRecurring || 0,
+        maxInstallments: limits.maxInstallments || 0,
+        maxInvestments: limits.maxInvestments || 0,
+        maxGoals: limits.maxGoals || 0,
+        storageGB: limits.storageGB || 0,
+      },
+      usage: {
+        transactionsCount: transactionCount,
+        recurringCount: recurringCount,
+        installmentsCount: installmentCount,
+        investmentsCount: investmentCount,
+        goalsCount: goalsCount,
+      },
+      percentages: {
+        transactions: limits.maxTransactions === -1 ? 0 : Math.round((transactionCount / limits.maxTransactions) * 100),
+        recurring: limits.maxRecurring === -1 ? 0 : Math.round((recurringCount / limits.maxRecurring) * 100),
+        installments: limits.maxInstallments === -1 ? 0 : Math.round((installmentCount / limits.maxInstallments) * 100),
+        investments: limits.maxInvestments === -1 ? 0 : Math.round((investmentCount / limits.maxInvestments) * 100),
+        goals: limits.maxGoals === -1 ? 0 : Math.round((goalsCount / limits.maxGoals) * 100),
+      },
+    };
+  }
+
+  /**
    * Transform features object to array of readable strings
    */
   private transformFeaturesToArray(features: any): string[] {
@@ -738,5 +1047,13 @@ export class SubscriptionsService {
    */
   private sanitizeCNPJ(cnpj: string): string {
     return cnpj.replace(/\D/g, '');
+  }
+
+  /**
+   * Sanitize CPF/CNPJ by removing all non-numeric characters
+   * Stripe requires tax IDs to be numbers only (no dots, slashes, or dashes)
+   */
+  private sanitizeCPFCNPJ(cpfCnpj: string): string {
+    return cpfCnpj.replace(/\D/g, '');
   }
 }

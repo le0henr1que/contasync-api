@@ -8,7 +8,7 @@ import { StorageService } from '../storage/storage.service';
 import { QueryPaymentsDto } from './dto/query-payments.dto';
 import { CreatePaymentDto } from './dto/create-payment.dto';
 import { UpdatePaymentDto } from './dto/update-payment.dto';
-import { Prisma, PaymentStatus, DocumentType, NotificationType } from '@prisma/client';
+import { Prisma, PaymentStatus, DocumentType, NotificationType, FolderType } from '@prisma/client';
 import { PaymentType } from './enums/payment-type.enum';
 import * as path from 'path';
 
@@ -447,6 +447,13 @@ export class PaymentsService {
           deletedAt: null,
         },
       },
+      include: {
+        accountant: {
+          select: {
+            userId: true,
+          },
+        },
+      },
     });
 
     if (!payment) {
@@ -454,6 +461,10 @@ export class PaymentsService {
       throw new NotFoundException('Pagamento não encontrado');
     }
     console.log('✅ Payment verified');
+
+    if (!payment.clientId) {
+      throw new BadRequestException('Pagamento sem cliente associado');
+    }
 
     // Validate file type (PDF, JPG, PNG)
     const allowedMimeTypes = ['application/pdf', 'image/jpeg', 'image/png'];
@@ -495,6 +506,19 @@ export class PaymentsService {
     await this.storageService.uploadFile(s3Key, file.buffer, file.mimetype);
     console.log('✅ Receipt uploaded to S3!');
 
+    // Create document in receipts folder
+    console.log('📁 Creating document in receipts folder...');
+    await this.createReceiptDocument(
+      payment.clientId,
+      id,
+      s3Key,
+      file.originalname,
+      file.mimetype,
+      file.size,
+      payment.accountant.userId,
+    );
+    console.log('✅ Document created in receipts folder');
+
     // Update payment with receipt info (S3 key in receiptPath)
     console.log('💾 Updating payment record...');
     const updatedPayment = await this.prisma.payment.update({
@@ -527,6 +551,126 @@ export class PaymentsService {
     console.log('========== UPLOAD RECEIPT COMPLETED ==========\n');
 
     return updatedPayment;
+  }
+
+  /**
+   * Download a receipt from S3
+   * @param receiptPath - S3 key for the receipt
+   * @returns Readable stream of the file
+   */
+  async downloadReceipt(receiptPath: string) {
+    console.log('\n📥 ========== DOWNLOAD RECEIPT STARTED ==========');
+    console.log('🔑 S3 Key:', receiptPath);
+
+    try {
+      const stream = await this.storageService.downloadFile(receiptPath);
+      console.log('✅ Receipt downloaded from S3');
+      console.log('========== DOWNLOAD RECEIPT COMPLETED ==========\n');
+      return stream;
+    } catch (error) {
+      console.error('❌ Error downloading receipt:', error.message);
+      throw new NotFoundException('Comprovante não encontrado');
+    }
+  }
+
+  /**
+   * Get or create the receipts folder for a client
+   * @param clientId - Client ID
+   * @returns The receipts folder
+   */
+  private async getOrCreateReceiptsFolder(clientId: string) {
+    console.log('📁 Getting or creating receipts folder for client:', clientId);
+
+    // Try to find existing receipts folder
+    let folder = await this.prisma.documentFolder.findFirst({
+      where: {
+        clientId,
+        type: FolderType.COMPROVANTES,
+      },
+    });
+
+    // If not found, create it
+    if (!folder) {
+      console.log('📁 Receipts folder not found, creating...');
+      folder = await this.prisma.documentFolder.create({
+        data: {
+          clientId,
+          name: 'Comprovantes',
+          type: FolderType.COMPROVANTES,
+          icon: '🧾',
+          color: '#f59e0b',
+          description: 'Comprovantes de pagamento',
+          isDefault: true,
+          sortOrder: 4,
+        },
+      });
+      console.log('✅ Receipts folder created:', folder.id);
+    } else {
+      console.log('✅ Receipts folder found:', folder.id);
+    }
+
+    return folder;
+  }
+
+  /**
+   * Create a document in the receipts folder for a payment receipt
+   * @param clientId - Client ID
+   * @param paymentId - Payment ID
+   * @param s3Key - S3 key for the file
+   * @param fileName - Original file name
+   * @param mimeType - File MIME type
+   * @param fileSize - File size in bytes
+   * @param createdById - User ID who uploaded the file
+   * @returns The created document
+   */
+  private async createReceiptDocument(
+    clientId: string,
+    paymentId: string,
+    s3Key: string,
+    fileName: string,
+    mimeType: string,
+    fileSize: number,
+    createdById: string,
+  ) {
+    console.log('📄 Creating receipt document for payment:', paymentId);
+
+    // Get or create receipts folder
+    const folder = await this.getOrCreateReceiptsFolder(clientId);
+
+    // Create document
+    const document = await this.prisma.document.create({
+      data: {
+        clientId,
+        folderId: folder.id,
+        type: DocumentType.RECEIPT,
+        title: `Comprovante - ${fileName}`,
+        description: `Comprovante de pagamento (ID: ${paymentId})`,
+        filePath: s3Key,
+        fileName,
+        mimeType,
+        fileSize,
+        createdById,
+      },
+    });
+
+    console.log('✅ Receipt document created:', document.id);
+
+    // Attach document to payment
+    try {
+      await this.prisma.paymentDocument.create({
+        data: {
+          paymentId,
+          documentId: document.id,
+          attachedBy: createdById,
+        },
+      });
+      console.log('✅ Document attached to payment');
+    } catch (error) {
+      // If already attached, ignore
+      console.log('ℹ️  Document already attached to payment or error:', error.message);
+    }
+
+    return document;
   }
 
   /**
@@ -822,6 +966,7 @@ export class PaymentsService {
           include: {
             user: {
               select: {
+                id: true,
                 name: true,
                 email: true,
               },
@@ -915,6 +1060,19 @@ export class PaymentsService {
     await this.storageService.uploadFile(s3Key, file.buffer, file.mimetype);
     console.log('✅ Receipt uploaded to S3!');
 
+    // Create document in receipts folder
+    console.log('📁 Creating document in receipts folder...');
+    await this.createReceiptDocument(
+      clientId,
+      id,
+      s3Key,
+      file.originalname,
+      file.mimetype,
+      file.size,
+      payment.client.user.id,
+    );
+    console.log('✅ Document created in receipts folder');
+
     // Update payment with receipt info and change status to AWAITING_VALIDATION
     console.log('💾 Updating payment record...');
     const updatedPayment = await this.prisma.payment.update({
@@ -931,6 +1089,7 @@ export class PaymentsService {
           include: {
             user: {
               select: {
+                id: true,
                 name: true,
                 email: true,
               },

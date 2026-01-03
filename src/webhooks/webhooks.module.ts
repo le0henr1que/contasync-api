@@ -6,7 +6,11 @@ import { PrismaModule } from '../prisma/prisma.module';
 import { EmailModule } from '../email/email.module';
 
 @Module({
-  imports: [StripeModule, PrismaModule, EmailModule],
+  imports: [
+    StripeModule,
+    PrismaModule,
+    EmailModule,
+  ],
   controllers: [WebhooksController],
   providers: [WebhooksService],
 })

@@ -12,7 +12,11 @@ import {
   UploadedFile,
   BadRequestException,
   Param,
+  Res,
+  NotFoundException,
+  StreamableFile,
 } from '@nestjs/common';
+import { Response } from 'express';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { PaymentsService } from './payments.service';
 import { QueryPaymentsDto } from './dto/query-payments.dto';
@@ -87,6 +91,31 @@ export class PaymentsController {
     const userId = req.user.id;
     const client = await this.paymentsService.getClientByUserId(userId);
     return this.paymentsService.uploadReceiptForClient(id, file, client.id);
+  }
+
+  @Get('me/:id/receipt/download')
+  @Roles(Role.CLIENT)
+  async downloadMyReceipt(
+    @Param('id') id: string,
+    @Request() req,
+    @Res() res: Response,
+  ) {
+    const userId = req.user.id;
+    const client = await this.paymentsService.getClientByUserId(userId);
+    const payment = await this.paymentsService.findOneForClient(id, client.id);
+
+    if (!payment || !payment.receiptPath) {
+      throw new NotFoundException('Comprovante não encontrado');
+    }
+
+    const stream = await this.paymentsService.downloadReceipt(payment.receiptPath);
+
+    res.set({
+      'Content-Type': payment.mimeType || 'application/octet-stream',
+      'Content-Disposition': `inline; filename="${payment.fileName || 'comprovante'}"`,
+    });
+
+    stream.pipe(res);
   }
 
   @Get('statistics')
@@ -179,6 +208,30 @@ export class PaymentsController {
 
     const accountantId = req.user.accountant.id;
     return this.paymentsService.uploadReceipt(id, file, accountantId);
+  }
+
+  @Get(':id/receipt/download')
+  @Roles(Role.ACCOUNTANT)
+  async downloadReceipt(
+    @Param('id') id: string,
+    @Request() req,
+    @Res() res: Response,
+  ) {
+    const accountantId = req.user.accountant.id;
+    const payment = await this.paymentsService.findOne(id, accountantId);
+
+    if (!payment || !payment.receiptPath) {
+      throw new NotFoundException('Comprovante não encontrado');
+    }
+
+    const stream = await this.paymentsService.downloadReceipt(payment.receiptPath);
+
+    res.set({
+      'Content-Type': payment.mimeType || 'application/octet-stream',
+      'Content-Disposition': `inline; filename="${payment.fileName || 'comprovante'}"`,
+    });
+
+    stream.pipe(res);
   }
 
   @Delete(':id')

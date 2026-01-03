@@ -119,6 +119,47 @@ async function main() {
     },
   });
 
+  const financialModule = await prisma.plan.create({
+    data: {
+      name: 'Módulo Financeiro',
+      slug: 'financial-module',
+      description: 'Gestão financeira pessoal completa e ilimitada',
+      tenantType: TenantType.INDIVIDUAL,
+      priceMonthly: 70,
+      priceYearly: 700, // ~17% discount
+      isActive: true,
+      sortOrder: 4,
+      featuresJson: {
+        financialManagement: true,
+        transactions: true,
+        recurringTransactions: true,
+        installments: true,
+        savingsBox: true,
+        investments: true,
+        financialGoals: true,
+        budgetDistribution: true,
+        reports: true,
+        advancedReports: true,
+        analytics: true,
+        support: 'priority',
+        customization: true,
+        apiAccess: false,
+      },
+      limitsJson: {
+        maxTransactions: -1, // unlimited
+        maxRecurring: -1,
+        maxInstallments: -1,
+        maxSavingsBoxes: -1,
+        maxInvestments: -1,
+        maxGoals: -1,
+        storageGB: 5,
+      },
+      stripePriceIdMonthly: process.env.FINANCIAL_MODULE_MONTHLY || 'price_1Sl8m5EqSdUW1JZYEk8AX1qY',
+      stripePriceIdYearly: process.env.FINANCIAL_MODULE_YEARLY || 'price_1Sl8o7EqSdUW1JZYazxZgCSN',
+      stripeProductId: process.env.FINANCIAL_MODULE_PRODUCT_ID || 'prod_TiZW8vu0Mbx0iZ',
+    },
+  });
+
   // ==========================================
   // ACCOUNTANT FIRM PLANS
   // ==========================================
@@ -276,12 +317,13 @@ async function main() {
   console.log(`    1. ${freeTrial.name} (${freeTrial.slug})`);
   console.log(`    2. ${starterIndividual.name} (${starterIndividual.slug}) - R$ ${starterIndividual.priceMonthly}/mês`);
   console.log(`    3. ${professionalIndividual.name} (${professionalIndividual.slug}) - R$ ${professionalIndividual.priceMonthly}/mês`);
+  console.log(`    4. ${financialModule.name} (${financialModule.slug}) - R$ ${financialModule.priceMonthly}/mês 💰`);
   console.log('');
   console.log('  ACCOUNTANT FIRM PLANS:');
-  console.log(`    4. ${accountantTrial.name} (${accountantTrial.slug})`);
-  console.log(`    5. ${starterFirm.name} (${starterFirm.slug}) - R$ ${starterFirm.priceMonthly}/mês`);
-  console.log(`    6. ${professionalFirm.name} (${professionalFirm.slug}) - R$ ${professionalFirm.priceMonthly}/mês`);
-  console.log(`    7. ${enterpriseFirm.name} (${enterpriseFirm.slug}) - R$ ${enterpriseFirm.priceMonthly}/mês`);
+  console.log(`    5. ${accountantTrial.name} (${accountantTrial.slug})`);
+  console.log(`    6. ${starterFirm.name} (${starterFirm.slug}) - R$ ${starterFirm.priceMonthly}/mês`);
+  console.log(`    7. ${professionalFirm.name} (${professionalFirm.slug}) - R$ ${professionalFirm.priceMonthly}/mês`);
+  console.log(`    8. ${enterpriseFirm.name} (${enterpriseFirm.slug}) - R$ ${enterpriseFirm.priceMonthly}/mês`);
   console.log('━'.repeat(80));
   console.log('\n✅ Database seeded successfully!');
   console.log('\n💡 Next step: Run Stripe setup script to configure Stripe Price IDs');
